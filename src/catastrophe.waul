@@ -2,8 +2,83 @@
 # Licensed under the terms of the MIT source code license
 
 # Introduction.
+# Catastrophe allows you to trace a function's execution and later query the log to identify certain conditions. To do this, it implements two mostly-independent pieces. The first is a
+# caterwaul-powered trace annotator that creates a global tracing hook and transforms functions to invoke this hook before and after each Javascript native instruction, and the second is an
+# object that represents a collection of instruction events.
+
+# Note that catastrophe contains its own copy of caterwaul; it hides its copy to prevent interference with the one in the surrounding context.
 
 caterwaul.module('catastrophe', ':all', function ($) {
-  catastrophe(options)(f, environment) = f});
+
+  (catastrophe(options) = tracer_for(options)) /-$.merge/ statics
+  -where [statics = capture [caterwaul = $.deglobalize()],
+
+# Trace implementation.
+# The tracer is implemented as a syntax tree grammar. However, rather than being used as a modifier (e.g. the -seq macro), this grammar is used to transform unannotated contents. That is, it
+# requires no annotation within the source to activate substitution. Fortunately, the caterwaul grammar module can easily handle this use case.
+
+  # Configuration.
+#   Tracers are configured when you create them. You do this by passing a hash of options to catastrophe(). For example:
+
+  # | var tracer = catastrophe({pre_trace: false})
+
+    # Mocking.
+#     You can use the tracer to replace certain subexpressions with mocks that you control. To do this, you specify an object that maps syntax tree patterns to replacements that contain your
+#     mocking implementations. You'll want to understand how to build caterwaul syntax trees in order to use this feature productively, but here's a small example:
+
+    # | var log_and_eval = function (x) {console.log(x); return eval(x)},
+#           tracer       = catastrophe({mocks: {'eval(_x)': 'log_and_eval(_x)'}});
+#       tracer(function () {
+#         eval(5);
+#       })();
+
+    # You don't have to use global functions; you can close over local values by using refs:
+
+    # | tracer = catastrophe({mocks: {'eval(_x)': 'log_and_eval(_x)'.qs.replace({log_and_eval: new $.ref(given.x in console.log(x) -then- eval(x))})}});
+
+    # Note that mocking doesn't turn of tracing by default; if you want to use Catastrophe just to mock things, use 'trace: false' in the options hash.
+
+    # Compilation environment.
+#     Any function you trace will lose its closure bindings. Normally this isn't a problem because you'd generally want to trace global functions. But you can reconstruct any bindings that are
+#     important by using the 'environment' option:
+
+    # | var tracer = catastrophe({environment: {x: 10}});
+#       tracer(function () {return x})()   -> 10
+
+    # You can bind arbitrarily complex values this way. You can also use this mechanism to mock the behavior of global values.
+
+    # Eval wrapping.
+#     In the admittedly strange world I live in, it isn't strange for code to eval() other code into existence. Sometimes the evaled code contains functions of its own, and those functions
+#     should be traced accordingly. As a result, the default mocking table includes mocked versions of eval() and 'new Function()' that annotate the code being compiled before compiling it. If
+#     there are other evaluation forms, you'll need to add more hooks for those.
+
+    # Pre-tracing.
+#     Catastrophe can't apply closed-world analysis to Javascript programs; at the very least, any given platform could provide arbitrarily many native functions. This means that any expression
+#     could conceivably throw an error. In order to pinpoint that error without putting a try/catch around every expression (expensive), catastrophe uses 'pre-tracing'. This is just an indicator
+#     that an expression is going to be evaluated but hasn't yet been reached. So, for example, the trace for f(g(x), y) would be:
+
+    # | 1. pre-evaluate f(g(x), y)
+#       2. pre-evaluate f
+#       3. evaluate f
+#       4. pre-evaluate g(x)
+#       5. pre-evaluate g
+#       6. evaluate g
+#       7. pre-evaluate x
+#       8. evaluate x
+#       9. evaluate g(x)
+#      10. pre-evaluate y
+#      11. evaluate y
+#      12. evaluate f(g(x), y)
+
+    # Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
+#     in the options hash.
+
+  # Trace grammar implementation.
+#   Javascript is fairly straightforward to implement. The only thing we need to do is track expression roles and make sure that our instrumentation code doesn't change them. For example, we
+#   can't instrument every identifier occurrence by wrapping it with an invocation like 'trace(x)', since 'var x = 10' would become invalid. In this case, 'x' is an lvalue, and that invariant
+#   needs to be preserved.
+
+          tracer_for(options) = trace -where [default_options = {mocks: {}, environment: {}, pre_trace: true, trace: true},
+                                              settings        = {} / default_options /-$.merge/ options]]});
 
 # Generated by SDoc 
