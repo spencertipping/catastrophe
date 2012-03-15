@@ -1710,6 +1710,8 @@ Catastrophe tracing debugger.
 Catastrophe is a tracing non-interactive debugger for Javascript. It works by recording every step of a function's execution and then allowing you to query the trace to find problems. It can
 also speculatively execute code under given hypothetical conditions. This, in turn, produces more traces that you can query.
 
+NOTE! This project doesn't work yet and may change significantly before it does.
+
   Quickstart guide.
   This guide goes through a quick example of how to use Catastrophe to find problems in client-side code. You can also use it on the server-side, for instance in node.js.
 
