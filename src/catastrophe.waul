@@ -76,6 +76,27 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
 #     in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
+          tracer_for(options) = trace -where [default_options = {mocks: {}, trace_native_eval_forms: true, environment: {}, pre_trace: true, trace: true, timestamps: true,
+                                                                 hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1 << 20},
+
+                                              settings        = {} / default_options /-$.merge/ options,
+                                              self()          = trace.apply(this, arguments),
+                                              eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(self) : {},
+                                              all_mocks       = eval_mocks /-$.merge/ settings.mocks,
+
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks}) -se- it.install_hook()
+
+                                                                /-$.merge/ wcapture [options        = settings,
+
+                                                                                     find(pattern)  = null,                             // TODO: implement this
+
+                                                                                     trace_log      = options.trace_log,
+                                                                                     error_log      = options.error_log,
+
+                                                                                     hook           = options.hook -oeq- hook_for(options),
+                                                                                     install_hook() = options.global && (options.global[options.hook_name] = hook),
+                                                                                     remove_hook()  = options.global && delete options.global[options.hook_name]]],
+
   # Trace grammar implementation.
 #   Javascript is fairly straightforward to implement. The only thing we need to do is track expression roles and make sure that our instrumentation code doesn't change them. For example, we
 #   can't instrument every identifier occurrence by wrapping it with an invocation like 'trace(x)', since 'var x = 10' would become invalid. In this case, 'x' is an lvalue, and it needs to stay
@@ -95,11 +116,11 @@ caterwaul.module('catastrophe', ':all', function ($) {
           grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
           -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks + closures -seq : [],
-                  custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /-rule/ process_mock(x[1] /!$.parse)] -seq
+                  custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
                             -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                     frame              = options.trace_mocks            ? "rvalue_pattern /~replace/ {_x: _}".qf : "_".qf,
                                     rvalue_pattern     = 'R[_x]'.qs /!anon,
-                                    process_mock(tree) = tree /!annotate /!frame],
+                                    process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate /!frame],
 
     # Statement-level hooks.
 #     Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
@@ -199,15 +220,15 @@ caterwaul.module('catastrophe', ':all', function ($) {
       # | pre-trace: hook(syntax-node)
 #         trace:     hook(syntax-node, value) -> value
 
-      # It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed!
+      # It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! If no value is given to the hook function, its return value will
+#       be unused.
 
                   hook_ref      = new $.syntax(options.hook_name),
                   pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
                   hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
                   hook(t)       = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
 
-                  hooks         = ['C'.qs     /-rule/ 'null'.qs,                                                                        // TODO: implement this
-                                   'H[_x]'.qs /-rule/ given.match in hook(match._x)],
+                  hooks         = ['H[_x]'.qs /-rule/ given.match in hook(match._x)],
 
       # Closure hooks.
 #       This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
@@ -223,7 +244,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
       # The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
-                  closures = []]],
+                  closures = ['C'.qs /-rule/ 'null'.qs]]],                                                                              // TODO: implement this
 
   # Hook function.
 #   Catastrophe's default hook function does several things that may be useful:
@@ -234,12 +255,55 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
 
-          hook_for(options) = observe -where [observe(x) = null],
+          hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
+                                              enqueue(t)        = bt /~push/ {tree: t, time: options.timestamp && +new Date},
+                                              resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: options.timestamp && +new Date, pre_trace: options.pre_trace && dequeue(t)}
+                                                                  -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
+                                                                  -then- v,
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, trace_mocks: true, allow_mock_annotations: true, trace_native_eval_forms: true, environment: {}, pre_trace: true,
-                                                                 trace: true, timestamps: true, hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1000000,
-                                                                 trace_log: [], error_log: []},
+                                              dequeue(t)        = bt.length && bt[bt.length - 1].tree === t ? bt.pop() : dequeue_remote(t),
 
-                                              settings        = {} / default_options /-$.merge/ options]]});
+                                              // Look through the backtrace for the tree. This is O(n) in the backtrace size, which makes error recovery quite expensive. At some point in the
+                                              // future I'll probably fix this by folding the backtrace into a set of known keys and quickly rejecting failed searches. This would reduce the
+                                              // impact to just one O(n) lookup.
+                                              dequeue_remote(t) = error_log /~push/ error_trace -then- entry -where [index       = bt |~![x.tree === t][xi] |seq,
+                                                                                                                     entry       = bt[index],
+                                                                                                                     error_trace = bt.splice(index, bt.length - index)],
+
+                                              trim_trace_log()  = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
+                                              bt                = options.pre_trace && [],
+                                              trace_log         = options.trace_log -oeq- [],
+                                              error_log         = options.pre_trace && options.error_log -oeq- []],
+
+  # Eval tracing.
+#   Catastrophe traces calls to eval() and new Function() by default. These are known sites where code is generated at runtime, and catastrophe instruments that code before it is compiled. You
+#   can mock out other evaluation primitives as well. This is fairly simple to do; you just use the tracer on the code. For example:
+
+  # | {mocks: {'some_eval_form(_code)': 'some_eval_form(my_tracer(_code))'.qs /~replace/ {my_tracer: tracer}}}
+
+  # Note that eval tracing doesn't catch everything, but it does catch the most common cases. In particular, it fails when you alias the eval() function or the Function constructor and invoke it
+#   via that alias. So, for example, this code will generate an untraced function:
+
+  # | var f = Function;
+#     var g = new f('return x + y', 'x', 'y');
+#     // g is untraced
+
+  # Theoretically, this gap could be closed by alias-checking each constructor invocation and function call. However, I'm not really up for implementing that at the moment, and aliasing these
+#   things is so uncommon that I doubt it's an issue.
+
+          eval_tracer_for(self) = "self(_ /!$.parse).toString()".qf,
+          eval_mocks_for(self)  = {'R[eval(_x)]':          'eval(trace(R[_x]))'.qs /~replace/ {trace: new $.ref(eval_tracer_for(self))},
+                                   'R[new Function(_xs)]':  patch_first_argument -where [frame       = 'new Function(R[_xs])'.qs,
+                                                                                         trace_frame = 'trace(_x)'.qs /~replace/ {trace: new $.ref(eval_tracer_for(self))},
+                                                                                         trace(xs)   = xs.flatten(',').map(i ? x : trace_frame.replace({_x: x}), given [x, i]).unflatten(),
+
+                                                                                         patch_first_argument(match) = frame /~replace/ {_xs: match._xs /!trace}]},
+
+  # Trace compiler.
+#   This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
+#   assume that the global hook has already been installed.
+
+          compiler(options) = instrument_and_compile -where [instrument                        = grammar(options),
+                                                             trace_and_compile(f, environment) = instrument(f, {} / options.environment /-$.merge/ environment)]]});
 
 # Generated by SDoc 
