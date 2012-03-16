@@ -1843,10 +1843,14 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
   The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-          grammar(options) = $.grammar('S R L U C H', {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
+          grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
           -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks -seq : [],
-                  custom_rules()  = options.mocks /pairs *[anon(x[0] /!$.parse) /-rule/ anon(x[1] /!$.parse)] -seq,
+                  custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /-rule/ process_mock(x[1] /!$.parse)] -seq
+                            -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
+                                    frame              = options.trace_mocks            ? "rvalue_pattern /~replace/ {_x: _}".qf : "_".qf,
+                                    rvalue_pattern     = 'R[_x]'.qs /!anon,
+                                    process_mock(tree) = tree /!annotate /!frame],
 
     Statement-level hooks.
     Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
@@ -1925,12 +1929,35 @@ requires no annotation within the source to activate substitution. Fortunately, 
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
 
     Hook rules.
-    This is where the markers get replaced by actual tracing code. The idea behind the tracing code is to create a log entry, ideally with as little overhead as possible. This involves at
-    least two actions. First, we need to record the pre-evaluation if pre-tracing is used; then we need to record the evaluated result.
+    There are two kinds of hooks that we use to instrument the code. The simple case is hooking an expression; this is triggered by using the H[] annotation in the rule table, or by generating
+    H[] nodes from a mocking table entry (this only works if allow_mock_annotations is set to true). The other case is hooking a closure scope, which is a bit more involved.
 
+      Expression hooks.
+      This is straightforward. We basically just generate a call to the globally-installed hook function (or the closure function if hook_name is set to null). We also generate a pre-call
+      unless pre_trace is set to false.
+
+      The only particularly interesting thing that happens here is maintaining the backtrace stack. When pre-tracing is enabled, we push an entry for each expression that will be evaluated and
+      pop an entry for expressions that completed successfully. However, naive popping won't do the right thing. The reason is that an error will cause a nonlocal jump that will disrupt the
+      normal execution flow. Naive popping from the new point would cause the error backtrace (which is valuable) to be stuck in the middle of the regular backtrace and probably eventually
+      destroyed.
+
+      To fix this, we go through the stack, starting with the most recent entry, to look for a matching node, and stash those entries in a separate error backtrace log. We then nuke all of
+      those entries from the main stack since they are no longer meaningful. Doing all of this imposes a nontrivial amount of overhead, which is one reason you might want to disable
+      pre-tracing.
+
+      Here is the information provided to the hook function:
+
+      | pre-trace: hook(syntax-node)
+        trace:     hook(syntax-node, value) -> value
+
+      It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed!
+
+                  hook  = options.hook ? new $.ref(options.hook, 'catastrophe_hook') : new $.syntax(options.hook_name),
                   hooks = []]],
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, environment: {}, pre_trace: true, trace: true, hook_name: $.gensym('catastrophe_hook')},
+          tracer_for(options) = trace -where [default_options = {mocks: {}, trace_mocks: true, allow_mock_annotations: true, environment: {}, pre_trace: true, trace: true,
+                                                                 hook_name: 'catastrophe_hook' /!$.gensym, hook: null},
+
                                               settings        = {} / default_options /-$.merge/ options]]});
 
 __
