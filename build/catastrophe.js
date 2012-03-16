@@ -303,7 +303,7 @@ for(var m=new l.constructor(),k=0,o=l.length;k<o;++k){j=l[k],m.push((this.change
 }return l}).call(this,i))}}}))}).call(this)});caterwaul.module( 'catastrophe' , (function(qs,qs1,qs2,qs3,qs4,qs5,qs6,qs7,qs8,qs9,qsa,qsb,qsc,qsd,qse,qsf,qsg,qsh,qsi,qsj,qsk,qsl,qsm,qsn,qso,qsp,qsq,qsr,qss,qst,qsu,qsv,qsw,qsx,qsy,qsz,qs10,qs11,qs12,qs13,qs14,qs15,qs16,qs17,qs18,qs19,qs1a,qs1b,qs1c,qs1d,qs1e,qs1f,qs1g,qs1h,qs1i,qs1j,qs1k,ahead,ahead1,qs1l,qs1m,qs1n,qs1o,qs1p,qs1q,qs1r,qs1s,qs1t,qs1u,qs1v,qs1w,qs1x,qs1y,qs1z,qs20,qs21,qs22,qs23,qs24,qs25,qs26,qs27,qs28,qs29,qs2a,qs2b,qs2c,qs2d,qs2e,qs2f,qs2g,qs2h,qs2i,qs2j,qs2k,qs2l,qs2m,qs2n,qs2o,qs2p,qs2q,qs2r,qs2s,qs2t,qs2u,qs2v,qs2w,qs2x,qs2y,qs2z,qs30,qs31,qs32,qs33,qs34,qs35,qs36,qs37,qs38,qs39,qs3a) {var result= (function($) { (function( ) {var global=this,statics= {caterwaul:$.deglobalize() } ,grammar=function(options) {;
 return(function( ) {var cc=function(rule,anon) {;
 return(function( ) {var tracing_rules=function() {;
-return options.trace? ( ( (statements) .concat( (lvalues) ) ) .concat( (rvalues) ) ) .concat( (hooks) ) : [ ] } ,custom_rules=function() {;
+return options.trace? ( ( ( (statements) .concat( (lvalues) ) ) .concat( (rvalues) ) ) .concat( (hooks) ) ) .concat( (closures) ) : [ ] } ,custom_rules=function() {;
 return(function( ) {var annotate=options.allow_mock_annotations?anon:function(_) {return _} ,frame=options.trace_mocks?function(_) {return(rvalue_pattern) .replace( {_x:_} ) } :function(_) {return _} ,rvalue_pattern=anon(qs) ,process_mock=function(tree) {;
 return frame(annotate(tree) ) } ;
 return( (function(xs) {var x,x0,xi,xl,xr;
@@ -318,7 +318,7 @@ for(var xr=new xs.constructor() ,xi=0,xl=xs.length;
 xi<xl;
  ++xi)x=xs[xi] ,xr.push( (rule(x[0] ,x[1] ) ) ) ;
 return xr} ) .call(this, ( (binary) .concat( (assign) ) ) ) ) ) ) .concat( ( [rule(qs2z,qs30) ,rule(qs31,qs32) ,rule(qs33,qs34) ] ) ) ) } ) .call(this) ,hook_ref=new $.syntax(options.hook_name) ,pre_hook_form= (qs35) .replace( {h:hook_ref} ) ,hook_form= (qs36) .replace( {h:hook_ref} ) ,hook=function(t) {;
-return( (options.pre_hook?pre_hook_form:hook_form) ) .replace( {_x:new $.ref(t) ,_value:t} ) } ,hooks= [rule(qs37,qs38) , (function(match) {return qs39/ -rule} )in hook(match._x) ] ;
+return( (options.pre_trace?pre_hook_form:hook_form) ) .replace( {_x:new $.ref(t) ,_value:t} ) } ,hooks= [rule(qs37,qs38) , (function(match) {return qs39/ -rule} )in hook(match._x) ] ,closures= [ ] ;
 return( (tracing_rules() ) .concat( (custom_rules() ) ) ) } ) .call(this) } ;
 return($.grammar( [ 'L' , 'U' , 'R' , 'C' , 'H' , 'S' ] , {initial:qs3a} ,cc) ) } ) .call(this) } ,hook_for=function(options) {;
 return(function( ) {var observe=function(x) {;

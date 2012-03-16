@@ -102,7 +102,7 @@ The terminal markers don't generate any others; they are rewritten into the fina
 
             grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
-            -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks -seq : [],
+            -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks + closures -seq : [],
                     custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /-rule/ process_mock(x[1] /!$.parse)] -seq
                               -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                       frame              = options.trace_mocks            ? "rvalue_pattern /~replace/ {_x: _}".qf : "_".qf,
@@ -214,6 +214,14 @@ Here is the information provided to the hook function:
 
 It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed!
 
+                hook_ref      = new $.syntax(options.hook_name),
+                pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
+                hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                hook(t)       = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
+
+                hooks         = ['C'.qs     /-rule/ 'null'.qs,                                                                        // TODO: implement this
+                                 'H[_x]'.qs /-rule/ given.match in hook(match._x)],
+
 #### Closure hooks
 
 This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
@@ -229,13 +237,7 @@ first argument will be an object containing state changes. Here's roughly what t
 
 The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
-                hook_ref      = new $.syntax(options.hook_name),
-                pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
-                hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
-                hook(t)       = (options.pre_hook ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
-
-                hooks         = ['C'.qs     /-rule/ 'null'.qs,                                                                        // TODO: implement this
-                                 'H[_x]'.qs /-rule/ given.match in hook(match._x)]]],
+                closures = []]],
 
 ## Hook function
 
