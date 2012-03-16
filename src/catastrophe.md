@@ -78,7 +78,7 @@ that an expression is going to be evaluated but hasn't yet been reached. So, for
     12. evaluate f(g(x), y)
 
 Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
-in the options hash.
+in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
 ## Trace grammar implementation
 
@@ -91,79 +91,102 @@ The tracer uses several different markers to track state:
     S  statement; this is something that appears in front of a ;
     R  rvalue (generic expression without any restrictions)
     L  lvalue (expression that cannot be traced)
+    U  code which should be unreachable
+    C  terminal closure scope hook (allows get/set of lexical closure variables)
     H  terminal expression hook
 
 The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-            grammar(forms_cc) = $.grammar('S R L H', {initial: 'S[_x]'.qs}, given [rule, anon] in statement_rules + lvalue_rules + rvalue_rules + hook_rules + custom_rules -seq
+            grammar(options) = $.grammar('S R L U C H', {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
+
+            -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks -seq : [],
+                    custom_rules()  = options.mocks /pairs *[anon(x[0] /!$.parse) /-rule/ anon(x[1] /!$.parse)] -seq,
 
 ### Statement-level hooks
 
   Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
   through to rvalue expressions; this reflects the fact that you can have an expression whose return value is not used.
 
-                      -where [statement_rules = ['S[_x]'.qs     /-rule/ 'R[_x]'.qs,
-                                                 'S[{_x}]'.qs   /-rule/ '{S[_x]}'.qs,
-                                                 'S[_x; _y]'.qs /-rule/ 'S[_x]; S[_y]'.qs,
+                  statements = ['S[_x]'.qs     /-rule/ 'R[_x]'.qs,
+                                'S[{_x}]'.qs   /-rule/ '{S[_x]}'.qs,
+                                'S[_x _y]'.qs  /-rule/ 'S[_x] S[_y]'.qs,                                                                // implied semicolon
+                                'S[_x; _y]'.qs /-rule/ 'S[_x]; S[_y]'.qs,
 
-                                                 'S[var _vs, _name = _value]'.qs        /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
-                                                 'S[var _name = _value]'.qs             /-rule/ 'var L[_name] = R[_value]'.qs,
+                                'S[var _vs, _name = _value]'.qs          /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
+                                'S[var _name = _value]'.qs               /-rule/ 'var L[_name] = R[_value]'.qs,
 
-                                                 'S[for (_x; _y; _z) _body]'.qs         /-rule/ 'for (S[_x]; R[_y]; R[_z]) S[_body]'.qs,
-                                                 'S[for (var _name in _o) _body'.qs     /-rule/ 'for (var L[_name] in R[_o]) S[_body]'.qs,
-                                                 'S[for (var _name in _1, _2) _body'.qs /-rule/ 'for (var L[_name] in R[_1], R[_2]) _body'.qs,  // TODO: fully generalize
-                                                 'S[do _body while (_cond)]'.qs         /-rule/ 'do S[_body] while (R[_cond])'.qs,
-                                                 'S[while (_cond) _body]'.qs            /-rule/ 'while (R[_cond]) S[_body]'.qs,
-                                                 'S[with (_x) _body]'.qs                /-rule/ 'with (R[_x]) S[_body]'.qs,
+                                'S[for (_x; _y; _z) _body]'.qs           /-rule/ 'for (S[_x]; R[_y]; R[_z]) S[_body]'.qs,
+                                'S[for (var _name in _o) _body]'.qs      /-rule/ 'for (var L[_name] in R[_o]) S[_body]'.qs,
+                                'S[for (var _name in _1, _2) _body]'.qs  /-rule/ 'for (var L[_name] in R[_1], R[_2]) _body'.qs,         // TODO: fully generalize
+                                'S[for (var _name in _1 = _2) _body]'.qs /-rule/ 'for (var L[_name] in L[_1] = R[_2]) _body'.qs,        // TODO: fully generalize
+                                'S[do _body while (_cond)]'.qs           /-rule/ 'do S[_body] while (R[_cond])'.qs,
+                                'S[while (_cond) _body]'.qs              /-rule/ 'while (R[_cond]) S[_body]'.qs,
+                                'S[with (_x) _body]'.qs                  /-rule/ 'with (R[_x]) S[_body]'.qs,
 
-                                                 'S[if (_cond) _body]'.qs               /-rule/ 'if (R[_cond]) S[_body]'.qs,
-                                                 'S[if (_cond) _body else _else]'.qs    /-rule/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
+                                'S[if (_cond) _body]'.qs                 /-rule/ 'if (R[_cond]) S[_body]'.qs,
+                                'S[if (_cond) _body else _else]'.qs      /-rule/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
 
-                                                 'S[try _x catch _y finally _z]'.qs     /-rule/ 'try S[_x] catch S[_y] finally S[_z]'.qs,
-                                                 'S[try _x catch _y]'.qs                /-rule/ 'try S[_x] catch S[_y]'.qs,
-                                                 'S[try _x finally _y]'.qs              /-rule/ 'try S[_x] finally S[_y]'.qs,
-                                                 'S[throw _x]'.qs                       /-rule/ 'throw R[_x]'.qs,
-                                                 'S[return _x]'.qs                      /-rule/ 'return R[_x]'.qs,
+                                'S[try _x catch _y finally _z]'.qs       /-rule/ 'try S[_x] catch S[_y] finally S[_z]'.qs,
+                                'S[try _x catch _y]'.qs                  /-rule/ 'try S[_x] catch S[_y]'.qs,
+                                'S[try _x finally _y]'.qs                /-rule/ 'try S[_x] finally S[_y]'.qs,
+                                'S[throw _x]'.qs                         /-rule/ 'throw R[_x]'.qs,
+                                'S[return _x]'.qs                        /-rule/ 'return R[_x]'.qs,
 
-                                                 'S[switch (_value) {_cases}'.qs        /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
-                                                 'S[_x: _y]'.qs                         /-rule/ '_x: S[_y]'.qs],                // covers both 'case x:' and labels within blocks
+                                'S[throw _x; _y]'.qs                     /-rule/ 'S[throw _x]; U[_y]'.qs,
+                                'S[return _x; _y]'.qs                    /-rule/ 'S[return _x]; U[_y]'.qs,
+
+                                'S[switch (_value) {_cases}]'.qs         /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
+                                'S[_x: _y]'.qs                           /-rule/ '_x: S[_y]'.qs],               // covers both 'case x:' and labels within blocks (: left-associates)
 
 ### Lvalue cases
 
 In some of these cases we can transform pieces of the lvalue but leave the lvalue itself intact. For example, 'foo.bar[bif]' contains 'foo.bar' as an rvalue, so we are free to transform
 this expression arbitrarily.
 
-                              lvalue_rules = ['L[_x@0]'.qs   /-rule/ '_x'.qs,
-                                              'L[_x[_y]]'.qs /-rule/ 'R[_x][L[_y]]'.qs,
-                                              'L[_x._y]'.qs  /-rule/ 'R[_x]._y'.qs],
+                  lvalues = ['L[_x@0]'.qs   /-rule/ '_x'.qs,        'L[_x[_y]]'.qs /-rule/ 'R[_x][L[_y]]'.qs,
+                             'L[_x._y]'.qs  /-rule/ 'R[_x]._y'.qs,  'L[_x(_y)]'.qs /-rule/ 'U[_x(_y)]'.qs],     // case for legacy IE code; this should be unreachable
 
 ### Rvalue cases
 
-These are generally easy cases that lead to terminal hook rules. Some operators take lvalues (delete, for instance), so this is modeled accordingly.
+These are generally easy cases that lead to terminal hook rules. Some operators take lvalues (delete, for instance), so this is modeled accordingly. There are a few odd cases here, most
+notably typeof. typeof can be used in two different ways: one way gives you the primitive type of a value, and the other way checks for the existence of a global variable. We need to
+handle the second case conservatively, since triggering any evaluation of a nonexistent global would introduce an error into the instrumented code.
 
-                              rvalue_rules = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,                'R[]'.qs            /-rule/ ''.qs,
-                                              'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,      'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,     // TODO: fix this
-                                              'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,           'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
-                                              'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,      'R[[_x]]'.qs        /-rule/ '[R[_x]]'.qs,
-                                              'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,         'R[{_x}]'.qs        /-rule/ '{R[_x]}'.qs,
+Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
+or array entry separator.
 
-                                              'R[_x(_y)]'.qs    /-rule/ 'HE[R[_x](R[_y])]'.qs,
-                                              'R[_x._y(_z)]'.qs /-rule/ 'HE[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
+                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
+                             'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,       // TODO: trace this with better granularity
+                             'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,          'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
+                             'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
+                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ 'H[{R[_x]}]'.qs,
 
-                                              'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,           'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
-                                              'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,            'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
+                             'R[_x(_y)]'.qs    /-rule/ 'H[R[_x](R[_y])]'.qs,
+                             'R[_x._y(_z)]'.qs /-rule/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
 
-                                              'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,            'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
-                                              'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,            'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
-                                              'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,           'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
-                                              'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,           'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
+                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
+                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
 
-                                             '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[$.parse('R[_x #{x} _y]') /-rule/ $.parse('H[R[_x] #{x} R[_y]]')] +
-                                             '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[$.parse('R[_x #{x} _y]') /-rule/ $.parse('H[L[_x] #{x} R[_y]]')] +
+                             'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
+                             'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
+                             'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
+                             'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
 
-                                             ['R[_x ? _y : _z]'.qs                 /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
-                                              'R[function (_xs) {_body}]'.qs       /-rule/ 'function (_xs) {S[_body]}'.qs,
-                                              'R[function _name (_xs) {_body}]'.qs /-rule/ 'function _name (_xs) {S[_body]}'.qs] -seq]),
+                            (binary + assign) *[x[0] /-rule/ x[1]] +
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, environment: {}, pre_trace: true, trace: true},
+                            ['R[_x ? _y : _z]'.qs                 /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
+                             'R[function (_xs) {_body}]'.qs       /-rule/ 'function (_xs) {C; S[_body]}'.qs,
+                             'R[function _name (_xs) {_body}]'.qs /-rule/ 'function _name (_xs) {C; S[_body]}'.qs] -seq
+
+        -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
+                assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
+
+### Hook rules
+
+This is where the markers get replaced by actual tracing code. The idea behind the tracing code is to create a log entry, ideally with as little overhead as possible. This involves at
+least two actions. First, we need to record the pre-evaluation if pre-tracing is used; then we need to record the evaluated result.
+
+                  hooks = []]],
+
+          tracer_for(options) = trace -where [default_options = {mocks: {}, environment: {}, pre_trace: true, trace: true, hook_name: $.gensym('catastrophe_hook')},
                                               settings        = {} / default_options /-$.merge/ options]]});
