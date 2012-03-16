@@ -240,7 +240,7 @@ be unused.
                 hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
                 hook(t)       = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
 
-                hooks         = ['H[_x]'.qs /-rule/ given.match [hook(match._x)]],
+                hooks         = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
 #### Closure hooks
 
@@ -270,8 +270,8 @@ Catastrophe's default hook function does several things that may be useful:
 Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
 
             hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                                enqueue(t)        = bt /~push/ {tree: t, time: options.timestamp && +new Date},
-                                                resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: options.timestamp && +new Date, pre_trace: options.pre_trace && dequeue(t)}
+                                                enqueue(t)        = bt /~push/ {tree: t, time: options.timestamp && +new Date()},
+                                                resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: options.timestamp && +new Date(), pre_trace: options.pre_trace && dequeue(t)}
                                                                     -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
                                                                     -then- v,
 
@@ -286,7 +286,7 @@ Normally the hook is bound as a global variable, but you can disable this by set
 
                                                 trim_trace_log()  = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
                                                 bt                = options.pre_trace && [],
-                                                trace_log         = options.trace_log -oeq- [],
+                                                trace_log         = options.trace_log,
                                                 error_log         = options.pre_trace && options.error_log -oeq- []],
 
 ## Eval tracing
@@ -321,4 +321,5 @@ assume that the global hook has already been installed.
 
             compiler(options) = trace_and_compile -where [trace                             = grammar(options),
                                                           wrapped_trace                     = $("trace({_x: _})".qf),
-                                                          trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment, {gensym_renaming: false})]]});
+                                                          trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
+                                                                                                               {transparent_errors: true, gensym_renaming: false})]]});
