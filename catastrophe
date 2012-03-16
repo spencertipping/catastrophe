@@ -1943,26 +1943,26 @@ requires no annotation within the source to activate substitution. Fortunately, 
     Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
     or array entry separator.
 
-                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x, _x]'.qs,                      'R[]'.qs            /-rule/ ''.qs,
-                             'R[delete _x]'.qs /-rule/ 'H[delete _x, delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,    // TODO: trace this with better granularity
-                             'R[_x._y]'.qs     /-rule/ 'H[_x._y, R[_x].y]'.qs,              'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
-                             'R[_x[_y]]'.qs    /-rule/ 'H[_x[_y], R[_x][R[_y]]]'.qs,        'R[[_x]]'.qs        /-rule/ 'H[[_x], [R[_x]]]'.qs,
-                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,                   'R[{_x}]'.qs        /-rule/ 'H[{_x}, {R[_x]}]'.qs,
+                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
+                             'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,               // TODO: trace this with better granularity
+                             'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,          'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
+                             'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
+                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ 'H[{R[_x]}]'.qs,
 
-                             'R[_x(_y)]'.qs    /-rule/ 'H[_x(_y), R[_x](R[_y])]'.qs,
-                             'R[_x._y(_z)]'.qs /-rule/ 'H[_x._y(_z), R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[_x[_y](_z), R[_x][R[_y]](R[_z])]'.qs,
+                             'R[_x(_y)]'.qs    /-rule/ 'H[R[_x](R[_y])]'.qs,
+                             'R[_x._y(_z)]'.qs /-rule/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
 
-                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,                     'R[typeof _x]'.qs   /-rule/ 'H[_x, typeof R[_x]]'.qs,
-                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,                      'R[typeof _x@0]'.qs /-rule/ 'H[_x, typeof _x]'.qs,
+                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[_x, typeof R[_x]]'.qs,
+                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[_x, typeof _x]'.qs,
 
-                             'R[+_x]'.qs       /-rule/ 'H[+_x, +R[_x]]'.qs,                 'R[~_x]'.qs         /-rule/ 'H[~_x, ~R[_x]]'.qs,
-                             'R[-_x]'.qs       /-rule/ 'H[-_x, -R[_x]]'.qs,                 'R[!_x]'.qs         /-rule/ 'H[!_x, !R[_x]]'.qs,
-                             'R[++_x]'.qs      /-rule/ 'H[++_x, ++L[_x]]'.qs,               'R[_x++]'.qs        /-rule/ 'H[_x++, L[_x]++]'.qs,
-                             'R[--_x]'.qs      /-rule/ 'H[--_x, --L[_x]]'.qs,               'R[_x--]'.qs        /-rule/ 'H[_x--, L[_x]--]'.qs] +
+                             'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
+                             'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
+                             'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
+                             'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
 
                             (binary + assign) *[x[0] /-rule/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[_x ? _y : _z, R[_x] ? R[_y] : R[_z]]'.qs,
+                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
 
                              'R[function () {_body}]'.qs       /-rule/ 'function () {C; S[_body]}'.qs,        'R[function () {}]'.qs       /-rule/ 'function () {C}'.qs,
                              'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,     'R[function (_xs) {}]'.qs    /-rule/ 'function (_xs) {C}'.qs,
@@ -2000,12 +2000,13 @@ requires no annotation within the source to activate substitution. Fortunately, 
       It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! If no value is given to the hook function, its return value will
       be unused.
 
-                  hook_ref      = new $.syntax(options.hook_name),
-                  pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
-                  hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
-                  hook(form, t) = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(form), _value: t},
+                  hook_ref                  = new $.syntax(options.hook_name),
+                  pre_hook_form             = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
+                  hook_form                 = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                  remove_markers_from(tree) = tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
+                  hook(t)                   = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
-                  hooks         = ['H[_form, _x]'.qs /-rule/ "hook(_._form, _._x)".qf],
+                  hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
       Closure hooks.
       This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
