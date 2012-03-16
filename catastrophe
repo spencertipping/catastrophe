@@ -1884,28 +1884,29 @@ requires no annotation within the source to activate substitution. Fortunately, 
     Rvalue cases.
     These are generally easy cases that lead to terminal hook rules. Some operators take lvalues (delete, for instance), so this is modeled accordingly.
 
-                              rvalue_rules = ['R[_x@0]'.qs        /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
-                                              'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,                                                  // TODO: fix this
-                                              'R[_x._y]'.qs       /-rule/ 'H[R[_x].y]'.qs,          'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
-                                              'R[_x[_y]]'.qs      /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ '[R[_x]]'.qs,
-                                              'R[_x, _y]'.qs      /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ '{R[_x]}'.qs,
+                              rvalue_rules = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,                'R[]'.qs            /-rule/ ''.qs,
+                                              'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,      'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,     // TODO: fix this
+                                              'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,           'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
+                                              'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,      'R[[_x]]'.qs        /-rule/ '[R[_x]]'.qs,
+                                              'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,         'R[{_x}]'.qs        /-rule/ '{R[_x]}'.qs,
 
-                                              'R[_x(_y)]'.qs      /-rule/ 'HE[R[_x](R[_y])]'.qs,
-                                              'R[_x._y(_z)]'.qs   /-rule/ 'HE[R[_x]._y(R[_z])]'.qs, 'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]',
+                                              'R[_x(_y)]'.qs    /-rule/ 'HE[R[_x](R[_y])]'.qs,
+                                              'R[_x._y(_z)]'.qs /-rule/ 'HE[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
 
-                                              'R[void _x]'.qs     /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
+                                              'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,           'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
+                                              'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,            'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
 
-                                              'R[+_x]'.qs         /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
-                                              'R[-_x]'.qs         /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
-                                              'R[++_x]'.qs        /-rule/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
-                                              'R[--_x]'.qs        /-rule/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
+                                              'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,            'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
+                                              'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,            'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
+                                              'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,           'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
+                                              'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,           'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
 
                                              '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[$.parse('R[_x #{x} _y]') /-rule/ $.parse('H[R[_x] #{x} R[_y]]')] +
                                              '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[$.parse('R[_x #{x} _y]') /-rule/ $.parse('H[L[_x] #{x} R[_y]]')] +
 
-                                             ['R[_x ? _y : _z]'.qs /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
-                                              'R[function (_xs) {_body}]'.qs /-rule/ 'function (_xs) {S[_body]}'.qs,
-                                              'R[function _name (_xs) {_body}]'.qs /-rule/ 'function _name (_xs) {S[_body]}'.qs]]),
+                                             ['R[_x ? _y : _z]'.qs                 /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
+                                              'R[function (_xs) {_body}]'.qs       /-rule/ 'function (_xs) {S[_body]}'.qs,
+                                              'R[function _name (_xs) {_body}]'.qs /-rule/ 'function _name (_xs) {S[_body]}'.qs] -seq]),
 
           tracer_for(options) = trace -where [default_options = {mocks: {}, environment: {}, pre_trace: true, trace: true},
                                               settings        = {} / default_options /-$.merge/ options]]});
