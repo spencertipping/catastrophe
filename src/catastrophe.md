@@ -12,7 +12,7 @@ Note that catastrophe contains its own copy of caterwaul; it hides its copy to p
     caterwaul.module('catastrophe', ':all', function ($) {
 
       (catastrophe = tracer_for) /-$.merge/ statics
-      -where [global  = this,
+      -where [global  = $.context,
               statics = capture [caterwaul = $.deglobalize()],
 
 # Trace implementation
@@ -83,15 +83,15 @@ that an expression is going to be evaluated but hasn't yet been reached. So, for
 Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
 in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, trace_native_eval_forms: true, environment: {}, pre_trace: true, trace: true, timestamps: true,
-                                                                 hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1 << 20},
+          tracer_for(options) = trace -where [default_options = {mocks: {}, allow_mock_annotations: true, trace_native_eval_forms: true, environment: {}, pre_trace: true, trace: true,
+                                                                 timestamps: true, hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1 << 20},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
                                               eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(self) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
-                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks}) -se- it.install_hook()
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: []})
 
                                                                 /-$.merge/ wcapture [options        = settings,
 
@@ -99,10 +99,11 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                                                                      trace_log      = options.trace_log,
                                                                                      error_log      = options.error_log,
-
                                                                                      hook           = options.hook -oeq- hook_for(options),
                                                                                      install_hook() = options.global && (options.global[options.hook_name] = hook),
-                                                                                     remove_hook()  = options.global && delete options.global[options.hook_name]]],
+                                                                                     remove_hook()  = options.global && delete options.global[options.hook_name]]
+
+                                                                -se- it.install_hook()],
 
 ## Trace grammar implementation
 
@@ -126,9 +127,7 @@ The terminal markers don't generate any others; they are rewritten into the fina
             -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks + closures -seq : [],
                     custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
                               -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
-                                      frame              = options.trace_mocks            ? "rvalue_pattern /~replace/ {_x: _}".qf : "_".qf,
-                                      rvalue_pattern     = 'R[_x]'.qs /!anon,
-                                      process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate /!frame],
+                                      process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate],
 
 ### Statement-level hooks
 
@@ -241,7 +240,7 @@ be unused.
                 hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
                 hook(t)       = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
 
-                hooks         = ['H[_x]'.qs /-rule/ given.match in hook(match._x)],
+                hooks         = ['H[_x]'.qs /-rule/ given.match [hook(match._x)]],
 
 #### Closure hooks
 
@@ -320,5 +319,6 @@ things is so uncommon that I doubt it's an issue.
 This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
 assume that the global hook has already been installed.
 
-            compiler(options) = instrument_and_compile -where [instrument                        = grammar(options),
-                                                               trace_and_compile(f, environment) = instrument(f, {} / options.environment /-$.merge/ environment)]]});
+            compiler(options) = trace_and_compile -where [trace                             = grammar(options),
+                                                          wrapped_trace                     = $("trace({_x: _})".qf),
+                                                          trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment, {gensym_renaming: false})]]});

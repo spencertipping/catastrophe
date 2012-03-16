@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<body>
+  <input id='n' />
+  <button id='compute'>Compute factorial</button>
+  <label id='output' />
+
+  <script src='http://code.jquery.com/jquery.min.js'></script>
+  <script src='../build/catastrophe.js'></script>
+  <script>
+    var tracer = catastrophe();
+
+    $(tracer(function () {
+      var factorial = function (x) {
+        return x ? x * factorial(x - 1) : 1;
+      };
+
+      $('#compute').click(function (e) {
+        $('#output').text(factorial(+$('#n').val()));
+      });
+    }));
+  </script>
+</body>
+</html>
