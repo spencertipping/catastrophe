@@ -650,7 +650,7 @@ my $header = <<end;
 // http://github.com/spencertipping/catastrophe
 end
 
-file::write('build/catastrophe.js', $header . cat(map "deps/$_.js", @deps));
+file::write('build/catastrophe.js', $header . cat(map "deps/$_.js", @deps) . cat('src/catastrophe.js'));
 
 minify_yui(qw|-m build/catastrophe.js|);
 file::write('build/catastrophe.min.js', $header . file::read('build/catastrophe.min.js'));
