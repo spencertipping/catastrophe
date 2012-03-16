@@ -124,15 +124,21 @@ The terminal markers don't generate any others; they are rewritten into the fina
 
             grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
-            -where [tracing_rules() = options.trace ? statements + lvalues + rvalues + hooks + closures -seq : [],
+            -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : [],
                     custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
                               -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                       process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate],
 
+### Unreachable hooks
+
+  These don't appear in the final output right now. They just exist so that I can keep track of stuff that theoretically can't be reached.
+
+                  unreachables = ['U[_x]'.qs /-rule/ ''.qs],
+
 ### Statement-level hooks
 
-  Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
-  through to rvalue expressions; this reflects the fact that you can have an expression whose return value is not used.
+Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
+through to rvalue expressions; this reflects the fact that you can have an expression whose return value is not used.
 
                   statements = ['S[_x]'.qs     /-rule/ 'R[_x]'.qs,
                                 'S[{_x}]'.qs   /-rule/ '{S[_x]}'.qs,
@@ -201,9 +207,12 @@ or array entry separator.
 
                             (binary + assign) *[x[0] /-rule/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs                 /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
-                             'R[function (_xs) {_body}]'.qs       /-rule/ 'function (_xs) {C; S[_body]}'.qs,
-                             'R[function _name (_xs) {_body}]'.qs /-rule/ 'function _name (_xs) {C; S[_body]}'.qs] -seq
+                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
+
+                             'R[function () {_body}]'.qs       /-rule/ 'function () {C; S[_body]}'.qs,        'R[function () {}]'.qs       /-rule/ 'function () {C}'.qs,
+                             'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,     'R[function (_xs) {}]'.qs    /-rule/ 'function (_xs) {C}'.qs,
+                             'R[function _f () {_body}]'.qs    /-rule/ 'function _f () {C; S[_body]}'.qs,     'R[function _f () {}]'.qs    /-rule/ 'function _f () {C}'.qs,
+                             'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs,  'R[function _f (_xs) {}]'.qs /-rule/ 'function _f (_xs) {C}'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
@@ -322,4 +331,4 @@ assume that the global hook has already been installed.
             compiler(options) = trace_and_compile -where [trace                             = grammar(options),
                                                           wrapped_trace                     = $("trace({_x: _})".qf),
                                                           trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
-                                                                                                               {transparent_errors: true, gensym_renaming: false})]]});
+                                                                                                               {transparent_errors: false, gensym_renaming: false})]]});
