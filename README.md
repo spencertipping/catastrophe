@@ -29,7 +29,7 @@ Because `tracer` is a global variable, you can then interact with it on the cons
 Let's suppose you want to find jQuery selections that ended up containing no DOM nodes. This can be done by first filtering for all jQuery calls, and then filtering again for those whose
 results' length is zero. Here's what that looks like in the Javascript console:
 
-    > tracer.find('$(_x)').filter('_.value.length === 0').map('_x.value')
+    > tracer.find('$(_x)').filter('x.value.length === 0').map('_x.value')
     ['selector1', 'selector2', ...]
     >
 

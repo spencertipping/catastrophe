@@ -93,17 +93,31 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                               trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: []})
 
-                                                                /-$.merge/ wcapture [options        = settings,
+                                                                /-$.merge/ wcapture [options                = settings,
 
-                                                                                     find(pattern)  = null,                             // TODO: implement this
+                                                                                     find(pattern)          = collection(trace_log %[t /~match/ x.tree] -seq, t) -where [t = $.parse(pattern)],
+                                                                                     errors()               = error_log *[collection(x, '_x')] -seq,
 
-                                                                                     trace_log      = options.trace_log,
-                                                                                     error_log      = options.error_log,
-                                                                                     hook           = options.hook -oeq- hook_for(options),
-                                                                                     install_hook() = options.global && (options.global[options.hook_name] = hook),
-                                                                                     remove_hook()  = options.global && delete options.global[options.hook_name]]
+                                                                                     trace_log              = options.trace_log,
+                                                                                     error_log              = options.error_log,
+                                                                                     hook                   = options.hook -oeq- hook_for(options),
+                                                                                     install_hook()         = options.global && (options.global[options.hook_name] = hook),
+                                                                                     remove_hook()          = options.global && delete options.global[options.hook_name]]
 
                                                                 -se- it.install_hook()],
+
+## Querying support
+
+Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what
+you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
+
+            collection(x, pattern) = x /-$.merge/ collection_methods -se [it.match_context = pattern],
+            collection_methods     = wcapture [function_compiler = $(':all'),
+                                               promote(f)        = f.constructor === Function ? f : this.compile_string(f),
+                                               compile_string(s) = 'given.x [#{s}, where [match = match_context /~match/ x.tree]]' /-function_compiler/ {match_context: this.match_context},
+
+                                               map(s)            = collection(this *f -seq, this.match_context) -where [f = this.promote(s)],
+                                               filter(s)         = collection(this %f -seq, this.match_context) -where [f = this.promote(s)]],
 
 ## Trace grammar implementation
 
@@ -142,7 +156,7 @@ through to rvalue expressions; this reflects the fact that you can have an expre
 
                   statements = ['S[_x]'.qs     /-rule/ 'R[_x]'.qs,
                                 'S[{_x}]'.qs   /-rule/ '{S[_x]}'.qs,
-                                'S[_x _y]'.qs  /-rule/ 'S[_x] S[_y]'.qs,                                                                // implied semicolon
+                                'S[_x _y]'.qs  /-rule/ 'S[_x] S[_y]'.qs,                                                                        // implied semicolon
                                 'S[_x; _y]'.qs /-rule/ 'S[_x]; S[_y]'.qs,
 
                                 'S[var _vs, _name = _value]'.qs          /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
@@ -150,8 +164,8 @@ through to rvalue expressions; this reflects the fact that you can have an expre
 
                                 'S[for (_x; _y; _z) _body]'.qs           /-rule/ 'for (S[_x]; R[_y]; R[_z]) S[_body]'.qs,
                                 'S[for (var _name in _o) _body]'.qs      /-rule/ 'for (var L[_name] in R[_o]) S[_body]'.qs,
-                                'S[for (var _name in _1, _2) _body]'.qs  /-rule/ 'for (var L[_name] in R[_1], R[_2]) _body'.qs,         // TODO: fully generalize
-                                'S[for (var _name in _1 = _2) _body]'.qs /-rule/ 'for (var L[_name] in L[_1] = R[_2]) _body'.qs,        // TODO: fully generalize
+                                'S[for (var _name in _1, _2) _body]'.qs  /-rule/ 'for (var L[_name] in R[_1], R[_2]) _body'.qs,                 // TODO: fully generalize
+                                'S[for (var _name in _1 = _2) _body]'.qs /-rule/ 'for (var L[_name] in L[_1] = R[_2]) _body'.qs,                // TODO: fully generalize
                                 'S[do _body while (_cond)]'.qs           /-rule/ 'do S[_body] while (R[_cond])'.qs,
                                 'S[while (_cond) _body]'.qs              /-rule/ 'while (R[_cond]) S[_body]'.qs,
                                 'S[with (_x) _body]'.qs                  /-rule/ 'with (R[_x]) S[_body]'.qs,
@@ -188,34 +202,37 @@ handle the second case conservatively, since triggering any evaluation of a none
 Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
 or array entry separator.
 
-                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
-                             'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,       // TODO: trace this with better granularity
-                             'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,          'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
-                             'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
-                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ 'H[{R[_x]}]'.qs,
+                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x, _x]'.qs,                      'R[]'.qs            /-rule/ ''.qs,
+                             'R[delete _x]'.qs /-rule/ 'H[delete _x, delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,    // TODO: trace this with better granularity
+                             'R[_x._y]'.qs     /-rule/ 'H[_x._y, R[_x].y]'.qs,              'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
+                             'R[_x[_y]]'.qs    /-rule/ 'H[_x[_y], R[_x][R[_y]]]'.qs,        'R[[_x]]'.qs        /-rule/ 'H[[_x], [R[_x]]]'.qs,
+                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,                   'R[{_x}]'.qs        /-rule/ 'H[{_x}, {R[_x]}]'.qs,
 
-                             'R[_x(_y)]'.qs    /-rule/ 'H[R[_x](R[_y])]'.qs,
-                             'R[_x._y(_z)]'.qs /-rule/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
+                             'R[_x(_y)]'.qs    /-rule/ 'H[_x(_y), R[_x](R[_y])]'.qs,
+                             'R[_x._y(_z)]'.qs /-rule/ 'H[_x._y(_z), R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[_x[_y](_z), R[_x][R[_y]](R[_z])]'.qs,
 
-                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
-                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
+                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,                     'R[typeof _x]'.qs   /-rule/ 'H[_x, typeof R[_x]]'.qs,
+                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,                      'R[typeof _x@0]'.qs /-rule/ 'H[_x, typeof _x]'.qs,
 
-                             'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
-                             'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
-                             'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
-                             'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
+                             'R[+_x]'.qs       /-rule/ 'H[+_x, +R[_x]]'.qs,                 'R[~_x]'.qs         /-rule/ 'H[~_x, ~R[_x]]'.qs,
+                             'R[-_x]'.qs       /-rule/ 'H[-_x, -R[_x]]'.qs,                 'R[!_x]'.qs         /-rule/ 'H[!_x, !R[_x]]'.qs,
+                             'R[++_x]'.qs      /-rule/ 'H[++_x, ++L[_x]]'.qs,               'R[_x++]'.qs        /-rule/ 'H[_x++, L[_x]++]'.qs,
+                             'R[--_x]'.qs      /-rule/ 'H[--_x, --L[_x]]'.qs,               'R[_x--]'.qs        /-rule/ 'H[_x--, L[_x]--]'.qs] +
 
                             (binary + assign) *[x[0] /-rule/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
+                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[_x ? _y : _z, R[_x] ? R[_y] : R[_z]]'.qs,
 
                              'R[function () {_body}]'.qs       /-rule/ 'function () {C; S[_body]}'.qs,        'R[function () {}]'.qs       /-rule/ 'function () {C}'.qs,
                              'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,     'R[function (_xs) {}]'.qs    /-rule/ 'function (_xs) {C}'.qs,
                              'R[function _f () {_body}]'.qs    /-rule/ 'function _f () {C; S[_body]}'.qs,     'R[function _f () {}]'.qs    /-rule/ 'function _f () {C}'.qs,
                              'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs,  'R[function _f (_xs) {}]'.qs /-rule/ 'function _f (_xs) {C}'.qs] -seq
 
-        -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
-                assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
+        -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw
+                         *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[_x #{x} _y, R[_x] #{x} R[_y]]')]] -seq -ahead,
+
+                assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw
+                         *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[_x #{x} _y, L[_x] #{x} R[_y]]')]] -seq -ahead],
 
 ### Hook rules
 
@@ -247,9 +264,9 @@ be unused.
                 hook_ref      = new $.syntax(options.hook_name),
                 pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
                 hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
-                hook(t)       = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
+                hook(form, t) = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(form), _value: t},
 
-                hooks         = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
+                hooks         = ['H[_form, _x]'.qs /-rule/ "hook(_._form, _._x)".qf],
 
 #### Closure hooks
 
@@ -266,7 +283,7 @@ first argument will be an object containing state changes. Here's roughly what t
 
 The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
-                closures = ['C'.qs /-rule/ 'null'.qs]]],                                                                              // TODO: implement this
+                closures = ['C'.qs /-rule/ 'null'.qs]]],                                                                                      // TODO: implement this
 
 ## Hook function
 
