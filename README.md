@@ -7,10 +7,11 @@ that this is not a fast library; on my netbook it takes more than 30 seconds to 
 
 This project sort of works right now.
 
-    patterns:            probably broken
-    native eval tracing: untested, but what could possibly be wrong?
-    pretrace mode:       untested
-    trace mode:          successfully traces jQuery
+    patterns:                        probably broken
+    native eval tracing:             untested, but what could possibly be wrong?
+    closure inspection/modification: not yet implemented
+    pretrace mode:                   untested
+    trace mode:                      successfully traces jQuery
 
 ## Quickstart guide
 

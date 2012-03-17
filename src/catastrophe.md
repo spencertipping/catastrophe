@@ -99,11 +99,11 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
           tracer_for(options) = trace -where [default_options = {mocks: {},           allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},
                                                              hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,                   global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                          trace: true,                pre_trace: true},
+                                                              patterns: null,                          trace: true,                pre_trace: true,             index: {}},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
-                                              eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(self) : {},
+                                              eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(settings.hook_name) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
                                               trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: [],
@@ -111,7 +111,7 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
-                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree.clean() && xi + 1] *[x - 1] -seq,
+                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree() && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t),
 
                                                                                      errors()                = error_log *[collection(x, '_x')] -seq,
@@ -119,6 +119,7 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
                                                                                      trace_log               = options.trace_log,
                                                                                      error_log               = options.error_log,
                                                                                      hook                    = options.hook -ocq- hook_for(options),
+                                                                                     trace_eval              = options.global && hook.trace_eval -ocq- eval_tracer_for(self),
                                                                                      install_hook()          = options.global && (options.global[options.hook_name] = hook),
                                                                                      remove_hook()           = options.global && delete options.global[options.hook_name]]
 
@@ -135,7 +136,6 @@ you're looking for. These methods will eval() strings into functions so that you
   original. This deliberate ID collision allows you to use the ID as an equivalence marker.
 
           remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
-          add_marker_method(t)   = t -se [it.clean() = remove_markers_from(this)],
 
 ### Pattern selection
 
@@ -174,11 +174,11 @@ So, for example, here are some basic queries:
 This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
                                                   select(xs)              = collection(xs, this.xs, this.pattern),
-                                                  iteration_context(x)    = this.pattern /~match/ this.xs[x].tree.clean() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                            wcapture [xs = this.xs,  r(t)  = xs |r[ri >= x ? r.tree.id() === t.id() : (ri = x - 1, 0)][r] |seq,
+                                                  iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
+                                                                            wcapture [xs = this.xs,  r(t)  = xs |r[ri >= x ? r.tree() === t : (ri = x - 1, 0)][r] |seq,
                                                                                       xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
 
-                                                                                                     v(t)  = r(t).value,  _ = xs[xi].tree.clean(),
+                                                                                                     v(t)  = r(t).value,  _ = xs[xi].tree(),
                                                                                                      t(t)  = r(t).time],
 
                                                   map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
@@ -189,8 +189,8 @@ This query shows you each input to f() followed by the corresponding output. You
                                                   first(n)                = this.select(this.slice(0, n || 1)),
                                                   last(n)                 = this.select(this.slice(this.length - 1 - (n || 1))),
 
-                                                  next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree.clean() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
-                                                  prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree.clean() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                  next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                  prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
 
                                                   interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
 
@@ -217,7 +217,8 @@ The tracer uses several different markers to track state:
 The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
             trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'}, cc),
-                                                   trace(tree) = grammar({_x: tree})]
+                                                   index(t)    = t /~reach/ "options.index[_.id()] = _".qf,
+                                                   trace(tree) = grammar({_x: index(tree)})]
 
             -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
@@ -231,7 +232,7 @@ The terminal markers don't generate any others; they are rewritten into the fina
   It's important to preserve tree node IDs across the annotation transform. This lets us reverse-map trace log entries to their corresponding tree nodes later on. In order to do this, we
   implement a custom rule() function that observes the incoming ID and replicates it.
 
-                  r(x, y) = "f.call(this, _) -se [it[1].id() = _[1].id(), when [it && it[1] && _[1]]]".qf -where [f = rule(x, y)],
+                  r(x, y) = "f.call(this, _) -se [_[1].id(), it[1].id = _[1].id, console.log(it.data), when [it && it[1] && _[1]]]".qf -where [f = rule(x, y)],
 
 ### Unreachable hooks
 
@@ -268,6 +269,8 @@ through to rvalue expressions; this reflects the fact that you can have an expre
 
                                 'S[switch (_value) {_cases}]'.qs /-r/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-r/ '_x: S[_y]'.qs,                           // covers both 'case x:' and labels within blocks (: left-associates)
+
+                                'S[function _f(_xs) {_body}'.qs  /-r/ 'function _f(_xs) {C; S[_body]}'.qs,      // no hook around statement-mode functions (see rvalue cases below)
 
                                 'S[try {_x} catch (_e) _y finally _z]'.qs /-r/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
                                 'S[try {_x} catch (_e) _y]'.qs            /-r/ 'try {S[_x]} catch (_e) S[_y]'.qs,
@@ -309,8 +312,8 @@ or array entry separator.
 
                             (binary + assign) *[x[0] /-r/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-r/ 'function (_xs) {C; S[_body]}'.qs,
-                                                                                      'R[function _f (_xs) {_body}]'.qs /-r/ 'function _f (_xs) {C; S[_body]}'.qs] -seq
+                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-r/ 'H[function (_xs) {C; S[_body]}]'.qs,
+                                                                                      'R[function _f (_xs) {_body}]'.qs /-r/ 'H[function _f (_xs) {C; S[_body]}]'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
@@ -346,8 +349,8 @@ be unused.
                 pre_hook_form          = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
                 hook_form              = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
-                hook(t)                = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
-                                           (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(add_marker_method(t)), _value: t},
+                hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
+                                           (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
 
                 hooks                  = ['H[_x]'.qs /-r/ "hook(_._x)".qf],
 
@@ -379,17 +382,20 @@ Catastrophe's default hook function does several things that may be useful:
 Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
 
             hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                                enqueue(t)        = bt /~push/ {tree: t, time: +new Date()},
-                                                resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: +new Date(), pre_trace: options.pre_trace && dequeue(t)}
+                                                enqueue(t)        = bt /~push/ $.merge(new record(t), {time: +new Date()}),
+                                                resolve(t, v)     = trace_log /~push/ $.merge(new record(t), {value: v, time: +new Date(), pre_trace: options.pre_trace && dequeue(t)})
                                                                     -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
                                                                     -then- v,
 
-                                                dequeue(t)        = bt.length && bt[bt.length - 1].tree === t ? bt.pop() : dequeue_remote(t),
+                                                record_methods    = capture [tree() = options.index[this.tree_id]],
+                                                record            = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
+
+                                                dequeue(t)        = bt.length && bt[bt.length - 1].tree_id === t ? bt.pop() : dequeue_remote(t),
 
                                                 // Look through the backtrace for the tree. This is O(n) in the backtrace size, which makes error recovery quite expensive. At some point in the
                                                 // future I'll probably fix this by folding the backtrace into a set of known keys and quickly rejecting failed searches. This would reduce the
                                                 // impact to just one O(n) lookup.
-                                                dequeue_remote(t) = error_log /~push/ error_trace -then- entry -where [index       = bt |~![x.tree === t][xi] |seq,
+                                                dequeue_remote(t) = error_log /~push/ error_trace -then- entry -where [index       = bt |~![x.tree_id === t][xi] |seq,
                                                                                                                        entry       = bt[index],
                                                                                                                        error_trace = bt.splice(index, bt.length - index)],
 
@@ -403,7 +409,7 @@ Normally the hook is bound as a global variable, but you can disable this by set
 Catastrophe traces calls to eval() and new Function() by default. These are known sites where code is generated at runtime, and catastrophe instruments that code before it is compiled. You
 can mock out other evaluation primitives as well. This is fairly simple to do; you just use the tracer on the code. For example:
 
-    {mocks: {'some_eval_form(_code)': 'some_eval_form(my_tracer(_code))'.qs /~replace/ {my_tracer: tracer}}}
+    {mocks: {'some_eval_form(_code)': 'some_eval_form(my_tracer(_code))'.qs /~replace/ {my_tracer: new $.ref(tracer)}}}
 
 Note that eval tracing doesn't catch everything, but it does catch the most common cases. In particular, it fails when you alias the eval() function or the Function constructor and invoke it
 via that alias. So, for example, this code will generate an untraced function:
@@ -415,10 +421,11 @@ via that alias. So, for example, this code will generate an untraced function:
 Theoretically, this gap could be closed by alias-checking each constructor invocation and function call. However, I'm not really up for implementing that at the moment, and aliasing these
 things is so uncommon that I doubt it's an issue.
 
-            eval_tracer_for(self) = "self(_ /!$.parse).toString()".qf,
-            eval_mocks_for(self)  = {'R[eval(_x)]': 'H[eval(trace(R[_x]))]'.qs, 'R[new Function(_x)]':      'H[new Function(trace(R[_x]))]'.qs,
-                                                                                'R[new Function(_xs, _x)]': 'H[new Function(R[_xs], trace(R[_x]))]'.qs}
-                                    %v*[x /~replace/ {trace: new $.ref(eval_tracer_for(self))}] -seq,
+            eval_tracer_for(self)     = "self(_ /!$.parse).toString()".qf,
+            eval_mocks_for(hook_name) = {'R[eval(_x)]':              'H[eval(trace(R[_x]))]'.qs,
+                                         'R[new Function(_x)]':      'H[new Function(trace(R[_x]))]'.qs,
+                                         'R[new Function(_xs, _x)]': 'H[new Function(R[_xs], trace(R[_x]))]'.qs} %v*[x /~replace/ {trace: trace_call}] -seq
+                                        -where [trace_call = 'hook.trace_eval'.qs /~replace/ {hook: hook_name}],
 
 ## Trace compiler
 
