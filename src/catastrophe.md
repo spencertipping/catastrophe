@@ -116,7 +116,7 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                                                                      trace_log               = options.trace_log,
                                                                                      error_log               = options.error_log,
-                                                                                     hook                    = options.hook -oeq- hook_for(options),
+                                                                                     hook                    = options.hook -ocq- hook_for(options),
                                                                                      install_hook()          = options.global && (options.global[options.hook_name] = hook),
                                                                                      remove_hook()           = options.global && delete options.global[options.hook_name]]
 
@@ -159,9 +159,11 @@ This query shows you each input to f() followed by the corresponding output.
 
                                                    select(xs)                     = collection(xs, this.xs, this.pattern),
                                                    iteration_context(x)           = this.pattern /~match/ this.xs[x].tree /-$.merge/
-                                                                                    wcapture [xs = this.xs, xi = x, r(t) = xs |~!r[ri <= x ? r.tree === t : (ri = x + 1, 0)][r] |seq,
-                                                                                                                    v(t) = r(t).value,  t(t) = r(t).time,
-                                                                                                                   dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)]],
+                                                                                    wcapture [xs = this.xs,  r(t)  = xs |~!r[ri <= x ? r.tree.id() === t.id() : (ri = x + 1, 0)][r] |seq,
+                                                                                              xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
+
+                                                                                                             v(t)  = r(t).value,
+                                                                                                             t(t)  = r(t).time],
 
                                                    map   (f, f = this.promote(f)) =             this *this.iteration_context *f -seq,
                                                    filter(f, f = this.promote(f)) = this.select(this *this.iteration_context %f -seq),
@@ -306,16 +308,17 @@ Here is the information provided to the hook function:
 It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! If no value is given to the hook function, its return value will
 be unused.
 
-                hook_ref                  = new $.syntax(options.hook_name),
-                pre_hook_form             = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
-                hook_form                 = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                hook_ref               = new $.syntax(options.hook_name),
+                pre_hook_form          = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
+                hook_form              = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
-                remove_markers_memo       = {},
-                remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
-                hook(t)                   = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
-                                              (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+                remove_markers_memo    = {},
+                remove_markers_from(t) = remove_markers_memo[t.id()] -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
 
-                hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
+                hook(t)                = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
+                                           (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+
+                hooks                  = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
 #### Closure hooks
 
@@ -362,7 +365,7 @@ Normally the hook is bound as a global variable, but you can disable this by set
                                                 trim_trace_log()  = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
                                                 bt                = options.pre_trace && [],
                                                 trace_log         = options.trace_log,
-                                                error_log         = options.pre_trace && options.error_log -oeq- []],
+                                                error_log         = options.pre_trace && options.error_log -ocq- []],
 
 ## Eval tracing
 
