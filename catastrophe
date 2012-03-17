@@ -1884,7 +1884,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
     By default, all of the trees referenced by log entries will have tons of intermediate markers in them. This function gets rid of that but returns a new tree with the same ID as the
     original. This deliberate ID collision allows you to use the ID as an equivalence marker.
 
-          remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
+          remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [t.id(), it.id = t.id],
 
     Pattern selection.
     The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
@@ -1922,7 +1922,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                                                   select(xs)              = collection(xs, this.xs, this.pattern),
                                                   iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                            wcapture [xs = this.xs,  r(t)  = xs |r[ri >= x ? r.tree() === t : (ri = x - 1, 0)][r] |seq,
+                                                                            wcapture [xs = this.xs,  r(t)  = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
                                                                                       xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
 
                                                                                                      v(t)  = r(t).value,  _ = xs[xi].tree(),
@@ -1962,7 +1962,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
   The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-          trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'}, cc),
+          trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
                                                  index(t)    = t /~reach/ "options.index[_.id()] = _".qf,
                                                  trace(tree) = grammar({_x: index(tree)})]
 
@@ -1977,7 +1977,8 @@ requires no annotation within the source to activate substitution. Fortunately, 
     It's important to preserve tree node IDs across the annotation transform. This lets us reverse-map trace log entries to their corresponding tree nodes later on. In order to do this, we
     implement a custom rule() function that observes the incoming ID and replicates it.
 
-                  r(x, y) = "f.call(this, _) -se [_[1].id(), it[1].id = _[1].id, console.log(it.data), when [it && it[1] && _[1]]]".qf -where [f = rule(x, y)],
+                  fix(f)  = result -where [result(x) = f.call(this, x) -re- this(it) /when.it],
+                  r(x, y) = fix('H[_x]'.qs /~match/ y ? "f.call(this, _) -se [_[1].id(), it[1].id = _[1].id, when.it]".qf -where [f = rule(x, y)] : rule(x, y)),
 
     Unreachable hooks.
     These don't appear in the final output right now. They just exist so that I can keep track of stuff that theoretically can't be reached.
