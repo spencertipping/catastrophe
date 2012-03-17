@@ -1861,7 +1861,9 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
-                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree && xi] -seq, trace_log, t),
+                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ remove_markers_from(x.tree) && xi] -seq,
+                                                                                                                          trace_log, t),
+
                                                                                      errors()                = error_log *[collection(x, '_x')] -seq,
 
                                                                                      trace_log               = options.trace_log,
@@ -1875,6 +1877,12 @@ requires no annotation within the source to activate substitution. Fortunately, 
   Querying support.
   Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what
   you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
+
+    Making trees presentable.
+    By default, all of the trees referenced by syntax trees will have tons of intermediate markers in them. This function gets rid of that.
+
+          remove_markers_memo    = {},
+          remove_markers_from(t) = remove_markers_memo[t.id()] -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
 
     Pattern selection.
     The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
@@ -1892,17 +1900,21 @@ requires no annotation within the source to activate substitution. Fortunately, 
     These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
     function's body. This string is compiled against several closure variables:
 
-    | x   the current event record; contains things like .tree, .value, .time, etc
-      xi  the index of the current event record in the log
-      _   the current syntax tree
-      _x  match variables; one for each wildcard in the syntax pattern
-      v() returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
+    | xi    the index of the current event record in the log
+      _     the current syntax tree
+      _x    match variables; one for each wildcard in the syntax pattern
+      v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
+      r()   returns the trace record for a given syntax tree
+      t()   returns the timestamp of the trace record for a given syntax tree
+      dt()  when pre-tracing is enabled, returns the total amount of time that elapsed while evaluating the given syntax tree
 
-    So, for example, here's a basic query:
+    So, for example, here are some basic queries:
 
-    | tracer.find('f(_x)').map('_x + ": " + v(_)')
+    | tracer.find('f(_x)').map('_x + " : " + v(_)')
+      tracer.find('f(_x)').filter('v(_) === 0').map('_x.toString()')
+      tracer.find('f(_x)').map('"f(#{_x} = #{v(_x)}): #{v(_)}"')
 
-    This query shows you each input to f() followed by the corresponding output.
+    This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
                                                    select(xs)                     = collection(xs, this.xs, this.pattern),
                                                    iteration_context(x)           = this.pattern /~match/ this.xs[x].tree /-$.merge/
@@ -1917,8 +1929,8 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                                                    to_a()                         = this *[this.xs[x]] -seq,
 
-                                                   step(n)                        = this.select(this *[x + n] -seq),
-                                                   adjacent(n)                    = this.select(this *~![ni[x - n, x + n] -seq] -seq),
+                                                   step(n)                        = this.select(this *[x + n] %[this.xs[x]] -seq),
+                                                   adjacent(n)                    = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
                                                    to  (t, t = $.parse(t))        = this.select(this *~!o[ni[o, this.xs |  [xi > o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq]    -seq] -seq),
                                                    from(t, t = $.parse(t))        = this.select(this *~!o[ni[   this.xs |~![xi < o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq, o] -seq] -seq)],
 
@@ -2052,11 +2064,8 @@ requires no annotation within the source to activate substitution. Fortunately, 
                   pre_hook_form          = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
                   hook_form              = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
-                  remove_markers_memo    = {},
-                  remove_markers_from(t) = remove_markers_memo[t.id()] -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
-
                   hook(t)                = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
-                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
 
                   hooks                  = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
