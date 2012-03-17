@@ -1861,7 +1861,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
-                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ remove_markers_from(x.tree) && xi] -seq,
+                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree.clean() && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t),
 
                                                                                      errors()                = error_log *[collection(x, '_x')] -seq,
@@ -1879,10 +1879,11 @@ requires no annotation within the source to activate substitution. Fortunately, 
   you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
 
     Making trees presentable.
-    By default, all of the trees referenced by syntax trees will have tons of intermediate markers in them. This function gets rid of that.
+    By default, all of the trees referenced by log entries will have tons of intermediate markers in them. This function gets rid of that but returns a new tree with the same ID as the
+    original. This deliberate ID collision allows you to use the ID as an equivalence marker.
 
-          remove_markers_memo    = {},
-          remove_markers_from(t) = remove_markers_memo[t.id()] -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
+          remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [it.id() = t.id()],
+          add_marker_method(t)   = t -se [it.clean() = remove_markers_from(this)],
 
     Pattern selection.
     The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
@@ -1890,17 +1891,19 @@ requires no annotation within the source to activate substitution. Fortunately, 
     bound in the selectors you use later on.
 
           collection(xis, xs, pattern) = xis / {xs: xs, pattern: pattern} /-$.merge/ collection_methods,
-          collection_methods           = wcapture [function_compiler            = $(':all'),
-                                                   promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
-                                                   compile_string(s)            = s / this.match_variables_for(this.pattern) /-function_compiler/ {unbound_closure: true},
+          collection_methods           = capture [function_compiler            = $(':all'),
+                                                  promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
+                                                  compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
 
-                                                   match_variables_for(pattern) = ('_ xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x, true]] /object -seq,
+                                                  match_variables_for(pattern) = ('_ x xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
 
     Selector methods.
     These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
     function's body. This string is compiled against several closure variables:
 
-    | xi    the index of the current event record in the log
+    | x     the current event record
+      xi    the index of the current event record in the log (this is invariant across filter operations)
+      xs    the log
       _     the current syntax tree
       _x    match variables; one for each wildcard in the syntax pattern
       v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
@@ -1916,23 +1919,31 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
     This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
-                                                   select(xs)                     = collection(xs, this.xs, this.pattern),
-                                                   iteration_context(x)           = this.pattern /~match/ this.xs[x].tree /-$.merge/
-                                                                                    wcapture [xs = this.xs,  r(t)  = xs |~!r[ri <= x ? r.tree.id() === t.id() : (ri = x + 1, 0)][r] |seq,
-                                                                                              xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
+                                                  select(xs)              = collection(xs, this.xs, this.pattern),
+                                                  iteration_context(x)    = this.pattern /~match/ this.xs[x].tree.clean() /or [{}] / {x: this.xs[x]} /-$.merge/
+                                                                            wcapture [xs = this.xs,  r(t)  = xs |r[ri >= x ? r.tree.id() === t.id() : (ri = x - 1, 0)][r] |seq,
+                                                                                      xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
 
-                                                                                                             v(t)  = r(t).value,
-                                                                                                             t(t)  = r(t).time],
+                                                                                                     v(t)  = r(t).value,  _ = xs[xi].tree.clean(),
+                                                                                                     t(t)  = r(t).time],
 
-                                                   map   (f, f = this.promote(f)) =             this *this.iteration_context *f -seq,
-                                                   filter(f, f = this.promote(f)) = this.select(this *this.iteration_context %f -seq),
+                                                  map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
+                                                  filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
 
-                                                   to_a()                         = this *[this.xs[x]] -seq,
+                                                  to_a()                  = this *[this.xs[x]] -seq,
 
-                                                   step(n)                        = this.select(this *[x + n] %[this.xs[x]] -seq),
-                                                   adjacent(n)                    = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
-                                                   to  (t, t = $.parse(t))        = this.select(this *~!o[ni[o, this.xs |  [xi > o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq]    -seq] -seq),
-                                                   from(t, t = $.parse(t))        = this.select(this *~!o[ni[   this.xs |~![xi < o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq, o] -seq] -seq)],
+                                                  first(n)                = this.select(this.slice(0, n || 1)),
+                                                  last(n)                 = this.select(this.slice(this.length - 1 - (n || 1))),
+
+                                                  next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree.clean() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                  prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree.clean() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+
+                                                  interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
+
+                                                  step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
+                                                  adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
+                                                  to(t)                   = this /~interval/ this.next(t),
+                                                  from(t)                 = this.prev(t) /~interval/ this],
 
   Trace grammar implementation.
   Javascript is fairly straightforward to implement. The only thing we need to do is track expression roles and make sure that our instrumentation code doesn't change them. For example, we
@@ -2065,7 +2076,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
                   hook_form              = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
                   hook(t)                = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
-                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(t), _value: t},
+                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(add_marker_method(t)), _value: t},
 
                   hooks                  = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
