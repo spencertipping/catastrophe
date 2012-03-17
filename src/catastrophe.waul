@@ -326,14 +326,14 @@ caterwaul.module('catastrophe', ':all', function ($) {
       # It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! If no value is given to the hook function, its return value will
 #       be unused.
 
-                  hook_ref               = new $.syntax(options.hook_name),
-                  pre_hook_form          = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
-                  hook_form              = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                  hook_ref      = new $.syntax(options.hook_name),
+                  pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
+                  hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
-                  hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
-                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
+                  hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
+                                    (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
 
-                  hooks                  = ['H[_x]'.qs /-r/ "hook(_._x)".qf],
+                  hooks         = ['H[_x]'.qs /-r/ "hook(_._x)".qf],
 
       # Closure hooks.
 #       This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
@@ -382,6 +382,20 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                               bt                = options.pre_trace && [],
                                               trace_log         = options.trace_log,
                                               error_log         = options.pre_trace && options.error_log -ocq- []],
+
+  # Closure annotation.
+#   We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
+#   set differences to figure out which variables are actually closure variables as opposed to locals.
+
+          scope_closed_reach(f)(t) = f(t) -then- f /~each/ "scope_closed_each(_, f) -unless- _.data === 'function'".qf,
+
+          immediate_scope(t)       = scope_closed_reach(visit)(t) -then- scope -where [visit(n)       = scope[n.data] -eq- true -when- n.is_identifier(), scope = {}],
+          local_scope(t)           = scope_closed_reach(visit)(t) -then- scope -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
+                                                                                       visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = true : normal(vs)],
+                                                                                       normal(vs)     = +vs *![scope[x.flatten('=')[0].data] = true] -seq,
+                                                                                       scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, true]] /object -seq],
+
+          closure_scope(t)         = local_scope(t) %k%![immediate /-Object.prototype.hasOwnProperty.call/ x] -seq -where [immediate = immediate_scope(t)],
 
   # Eval tracing.
 #   Catastrophe traces calls to eval() and new Function() by default. These are known sites where code is generated at runtime, and catastrophe instruments that code before it is compiled. You
