@@ -208,55 +208,61 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
           -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
-          -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : ['S[_x]'.qs /-rule/ '_x'.qs],
-                  custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
+          -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : ['S[_x]'.qs /-r/ '_x'.qs],
+                  custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-r/ process_mock(x[1] /!process_mock)] -seq
                             -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                     process_mock(tree) = tree.constructor === Function ? tree : tree /!$.parse /!annotate],
+
+    # ID preservation.
+#     It's important to preserve tree node IDs across the annotation transform. This lets us reverse-map trace log entries to their corresponding tree nodes later on. In order to do this, we
+#     implement a custom rule() function that observes the incoming ID and replicates it.
+
+                  r(x, y) = "f.call(this, _) -se [it[1].id() = _[1].id(), when [it && it[1] && _[1]]]".qf -where [f = rule(x, y)],
 
     # Unreachable hooks.
 #     These don't appear in the final output right now. They just exist so that I can keep track of stuff that theoretically can't be reached.
 
-                  unreachables = ['U[_x]'.qs /-rule/ ''.qs],
+                  unreachables = ['U[_x]'.qs /-r/ ''.qs],
 
     # Statement-level hooks.
 #     Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
 #     through to rvalue expressions; this reflects the fact that you can have an expression whose return value is not used.
 
-                  statements = ['S[_x]'.qs     /-rule/ 'R[_x]'.qs,
-                                'S[{_x}]'.qs   /-rule/ '{S[_x]}'.qs,
-                                'S[_x _y]'.qs  /-rule/ 'S[_x] S[_y]'.qs,                                                                        // implied semicolon
-                                'S[_x; _y]'.qs /-rule/ 'S[_x]; S[_y]'.qs,
+                  statements = ['S[_x]'.qs     /-r/ 'R[_x]'.qs,
+                                'S[{_x}]'.qs   /-r/ '{S[_x]}'.qs,
+                                'S[_x _y]'.qs  /-r/ 'S[_x] S[_y]'.qs,                                                                           // implied semicolon
+                                'S[_x; _y]'.qs /-r/ 'S[_x]; S[_y]'.qs,
 
-                                'S[var _vs, _x]'.qs              /-rule/ 'S[var _vs], R[_x]'.qs,         'S[if (_cond) _body]'.qs            /-rule/ 'if (R[_cond]) S[_body]'.qs,
-                                'S[var _vs, _name@0]'.qs         /-rule/ 'S[var _vs]; S[var _name]'.qs,  'S[if (_cond) _body else _else]'.qs /-rule/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
-                                'S[var _vs, _name = _value]'.qs  /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
-                                'S[var _name@0]'.qs              /-rule/ 'var _name'.qs,                 'S[throw _x]'.qs                    /-rule/ 'throw R[_x]'.qs,
-                                'S[var _name = _value]'.qs       /-rule/ 'var _name = R[_value]'.qs,
-                                'S[var _name in _value]'.qs      /-rule/ 'var _name in R[_value]'.qs,    'S[for (_x) _body]'.qs              /-rule/ 'for (S[_x]) S[_body]'.qs,
+                                'S[var _vs, _x]'.qs              /-r/ 'S[var _vs], R[_x]'.qs,         'S[if (_cond) _body]'.qs            /-r/ 'if (R[_cond]) S[_body]'.qs,
+                                'S[var _vs, _name@0]'.qs         /-r/ 'S[var _vs]; S[var _name]'.qs,  'S[if (_cond) _body else _else]'.qs /-r/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
+                                'S[var _vs, _name = _value]'.qs  /-r/ 'S[var _vs]; S[var _name = _value]'.qs,
+                                'S[var _name@0]'.qs              /-r/ 'var _name'.qs,                 'S[throw _x]'.qs                    /-r/ 'throw R[_x]'.qs,
+                                'S[var _name = _value]'.qs       /-r/ 'var _name = R[_value]'.qs,
+                                'S[var _name in _value]'.qs      /-r/ 'var _name in R[_value]'.qs,    'S[for (_x) _body]'.qs              /-r/ 'for (S[_x]) S[_body]'.qs,
 
-                                'S[do _body while (_cond)]'.qs   /-rule/ 'do S[_body] while (R[_cond])'.qs,
-                                'S[while (_cond) _body]'.qs      /-rule/ 'while (R[_cond]) S[_body]'.qs,
-                                'S[with (_x) _body]'.qs          /-rule/ 'with (R[_x]) S[_body]'.qs,
+                                'S[do _body while (_cond)]'.qs   /-r/ 'do S[_body] while (R[_cond])'.qs,
+                                'S[while (_cond) _body]'.qs      /-r/ 'while (R[_cond]) S[_body]'.qs,
+                                'S[with (_x) _body]'.qs          /-r/ 'with (R[_x]) S[_body]'.qs,
 
-                                'S[continue _label]'.qs          /-rule/ 'continue _label'.qs,           'S[continue]'.qs                    /-rule/ 'continue'.qs,
-                                'S[break _label]'.qs             /-rule/ 'break _label'.qs,              'S[break]'.qs                       /-rule/ 'break'.qs,
-                                'S[return _x]'.qs                /-rule/ 'return R[_x]'.qs,              'S[return]'.qs                      /-rule/ 'return'.qs,
+                                'S[continue _label]'.qs          /-r/ 'continue _label'.qs,           'S[continue]'.qs                    /-r/ 'continue'.qs,
+                                'S[break _label]'.qs             /-r/ 'break _label'.qs,              'S[break]'.qs                       /-r/ 'break'.qs,
+                                'S[return _x]'.qs                /-r/ 'return R[_x]'.qs,              'S[return]'.qs                      /-r/ 'return'.qs,
 
-                                'S[for (_name in _v) _body]'.qs  /-rule/ 'for (_name in R[_v]) _body'.qs,       // pathological case; we don't want the 'in' turning to an R[]
+                                'S[for (_name in _v) _body]'.qs  /-r/ 'for (_name in R[_v]) _body'.qs,          // pathological case; we don't want the 'in' turning to an R[]
 
-                                'S[switch (_value) {_cases}]'.qs /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
-                                'S[_x: _y]'.qs                   /-rule/ '_x: S[_y]'.qs,                        // covers both 'case x:' and labels within blocks (: left-associates)
+                                'S[switch (_value) {_cases}]'.qs /-r/ 'switch (R[_value]) {S[_cases]}'.qs,
+                                'S[_x: _y]'.qs                   /-r/ '_x: S[_y]'.qs,                           // covers both 'case x:' and labels within blocks (: left-associates)
 
-                                'S[try {_x} catch (_e) _y finally _z]'.qs /-rule/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
-                                'S[try {_x} catch (_e) _y]'.qs            /-rule/ 'try {S[_x]} catch (_e) S[_y]'.qs,
-                                'S[try {_x} finally _y]'.qs               /-rule/ 'try {S[_x]} finally S[_y]'.qs],
+                                'S[try {_x} catch (_e) _y finally _z]'.qs /-r/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
+                                'S[try {_x} catch (_e) _y]'.qs            /-r/ 'try {S[_x]} catch (_e) S[_y]'.qs,
+                                'S[try {_x} finally _y]'.qs               /-r/ 'try {S[_x]} finally S[_y]'.qs],
 
     # Lvalue cases.
 #     In some of these cases we can transform pieces of the lvalue but leave the lvalue itself intact. For example, 'foo.bar[bif]' contains 'foo.bar' as an rvalue, so we are free to transform
 #     this expression arbitrarily.
 
-                  lvalues = ['L[_x@0]'.qs   /-rule/ '_x'.qs,        'L[_x[_y]]'.qs /-rule/ 'R[_x][L[_y]]'.qs,
-                             'L[_x._y]'.qs  /-rule/ 'R[_x]._y'.qs,  'L[_x(_y)]'.qs /-rule/ 'U[_x(_y)]'.qs],     // case for legacy IE code; this should be unreachable
+                  lvalues = ['L[_x@0]'.qs   /-r/ '_x'.qs,        'L[_x[_y]]'.qs /-r/ 'R[_x][L[_y]]'.qs,
+                             'L[_x._y]'.qs  /-r/ 'R[_x]._y'.qs,  'L[_x(_y)]'.qs /-r/ 'U[_x(_y)]'.qs],           // case for legacy IE code; this should be unreachable
 
     # Rvalue cases.
 #     These are generally easy cases that lead to terminal hook rules. Some operators take lvalues (delete, for instance), so this is modeled accordingly. There are a few odd cases here, most
@@ -266,27 +272,27 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
 #     or array entry separator.
 
-                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,                             // empty case required for [] and {}
-                             'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,               // TODO: trace this with better granularity
-                             'R[_x._y]'.qs     /-rule/ 'H[R[_x]._y]'.qs,         'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
-                             'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
-                             'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ 'H[{R[_x]}]'.qs,
+                  rvalues = ['R[_x@0]'.qs      /-r/ 'H[_x]'.qs,               'R[]'.qs            /-r/ ''.qs,                                   // empty case required for [] and {}
+                             'R[delete _x]'.qs /-r/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-r/ 'new _f(R[_xs])'.qs,                     // TODO: trace this with better granularity
+                             'R[_x._y]'.qs     /-r/ 'H[R[_x]._y]'.qs,         'R[(_x)]'.qs        /-r/ '(R[_x])'.qs,
+                             'R[_x[_y]]'.qs    /-r/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-r/ 'H[[R[_x]]]'.qs,
+                             'R[_x, _y]'.qs    /-r/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-r/ 'H[{R[_x]}]'.qs,
 
-                             'R[_x(_y)]'.qs    /-rule/ 'H[R[_x](R[_y])]'.qs,
-                             'R[_x._y(_z)]'.qs /-rule/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
+                             'R[_x(_y)]'.qs    /-r/ 'H[R[_x](R[_y])]'.qs,
+                             'R[_x._y(_z)]'.qs /-r/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-r/ 'H[R[_x][R[_y]](R[_z])]'.qs,
 
-                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
-                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
+                             'R[void _x]'.qs   /-r/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-r/ 'H[typeof R[_x]]'.qs,
+                             'R[_x: _y]'.qs    /-r/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-r/ 'H[typeof _x]'.qs,
 
-                             'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
-                             'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
-                             'R[++_x]'.qs      /-rule/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-rule/ 'H[L[_x]++]'.qs,
-                             'R[--_x]'.qs      /-rule/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-rule/ 'H[L[_x]--]'.qs] +
+                             'R[+_x]'.qs       /-r/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-r/ 'H[~R[_x]]'.qs,
+                             'R[-_x]'.qs       /-r/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-r/ 'H[!R[_x]]'.qs,
+                             'R[++_x]'.qs      /-r/ 'H[++L[_x]]'.qs,          'R[_x++]'.qs        /-r/ 'H[L[_x]++]'.qs,
+                             'R[--_x]'.qs      /-r/ 'H[--L[_x]]'.qs,          'R[_x--]'.qs        /-r/ 'H[L[_x]--]'.qs] +
 
-                            (binary + assign) *[x[0] /-rule/ x[1]] +
+                            (binary + assign) *[x[0] /-r/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,
-                                                                                         'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs] -seq
+                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-r/ 'function (_xs) {C; S[_body]}'.qs,
+                                                                                      'R[function _f (_xs) {_body}]'.qs /-r/ 'function _f (_xs) {C; S[_body]}'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
@@ -323,7 +329,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
                   hook(t)                = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
                                              (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(add_marker_method(t)), _value: t},
 
-                  hooks                  = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
+                  hooks                  = ['H[_x]'.qs /-r/ "hook(_._x)".qf],
 
       # Closure hooks.
 #       This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
@@ -339,7 +345,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
       # The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
-                  closures = ['C'.qs /-rule/ 'null'.qs]]],                                                                                      // TODO: implement this
+                  closures = ['C'.qs /-r/ 'null'.qs]]],                                                                                         // TODO: implement this
 
   # Hook function.
 #   Catastrophe's default hook function does several things that may be useful:
