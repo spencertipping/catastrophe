@@ -160,7 +160,9 @@ through to rvalue expressions; this reflects the fact that you can have an expre
                                 'S[_x; _y]'.qs /-rule/ 'S[_x]; S[_y]'.qs,
 
                                 'S[var _vs, _name = _value]'.qs          /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
+                                'S[var _vs, _name@0]'.qs                 /-rule/ 'S[var _vs]; S[var _name]'.qs,
                                 'S[var _name = _value]'.qs               /-rule/ 'var L[_name] = R[_value]'.qs,
+                                'S[var _name@0]'.qs                      /-rule/ 'var L[_name]'.qs,
 
                                 'S[for (_x; _y; _z) _body]'.qs           /-rule/ 'for (S[_x]; R[_y]; R[_z]) S[_body]'.qs,
                                 'S[for (var _name in _o) _body]'.qs      /-rule/ 'for (var L[_name] in R[_o]) S[_body]'.qs,
