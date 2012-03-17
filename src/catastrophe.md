@@ -362,7 +362,7 @@ assume that the global hook has already been installed.
   {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
   could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
 
-          fill_empty(n)     = '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
+          fill_empty(n)     = n.data.length && '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
           compiler(options) = trace_and_compile -where [trace                             = grammar(options),
                                                         wrapped_trace                     = $("trace({_x: _ /~reach/ fill_empty})".qf),
                                                         trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,

@@ -384,7 +384,7 @@ return{ 'R[eval(_x)]' : (qs3o) .replace( {trace:new $.ref(eval_tracer_for(self) 
 return xs.flatten( ',' ) .map( (function(x,i) {return i?x:trace_frame.replace( {_x:x} ) } ) ) .unflatten() } ,patch_first_argument=function(match) {;
 return(frame) .replace( {_xs:trace(match._xs) } ) } ;
 return(patch_first_argument) } ) .call(this) } } ,fill_empty=function(n) {;
-return'([{' .indexOf(n.data) > -1&& !n.length&& (n) .push($.empty) } ,compiler=function(options) {;
+return n.data.length&& '([{' .indexOf(n.data) > -1&& !n.length&& (n) .push($.empty) } ,compiler=function(options) {;
 return(function( ) {var trace=grammar(options) ,wrapped_trace=$(function(_) {return trace( {_x: (_) .reach(fill_empty) } ) } ) ,trace_and_compile=function(f,environment) {;
 return wrapped_trace(f,$.merge( { } ,options.environment,environment) , {transparent_errors:false,gensym_renaming:false} ) } ;
 return(trace_and_compile) } ) .call(this) } ;
