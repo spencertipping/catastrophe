@@ -636,24 +636,29 @@ else    {pop @{$transient{path}}}
 __
 meta::function('reload', 'around_hook(\'reload\', sub {execute($_) for grep ! /^bootstrap::/, keys %data});');
 meta::function('render', <<'__');
+my ($options, @stuff) = separate_options(@_);
+
 file::write('README.md', retrieve('markdown::readme'));
-file::write('src/catastrophe.waul', retrieve('waul::catastrophe'), mkpath => 1);
-file::write('src/catastrophe.md',   retrieve('markdown::waul::catastrophe'), mkpath => 1);
 
-terminal::info('waul-compiling catastrophe.waul');
-sh('waul src/catastrophe.waul');
+unless ($$options{-J}) {
+  file::write('src/catastrophe.waul', retrieve('waul::catastrophe'), mkpath => 1);
+  file::write('src/catastrophe.md',   retrieve('markdown::waul::catastrophe'), mkpath => 1);
 
-my @deps = qw/caterwaul.min caterwaul.std.min regexp.min parser.min/;
-my $header = <<end;
+  terminal::info('waul-compiling catastrophe.waul');
+  sh('waul src/catastrophe.waul');
+
+  my @deps = qw/caterwaul.min caterwaul.std.min regexp.min parser.min/;
+  my $header = <<end;
 // Catastrophe tracing debugger | Spencer Tipping
 // Licensed under the terms of the MIT source code license
 // http://github.com/spencertipping/catastrophe
 end
 
-file::write('build/catastrophe.js', $header . cat(map "deps/$_.js", @deps) . cat('src/catastrophe.js'));
+  file::write('build/catastrophe.js', $header . cat(map "deps/$_.js", @deps) . cat('src/catastrophe.js'));
 
-minify_yui(qw|-m build/catastrophe.js|);
-file::write('build/catastrophe.min.js', $header . file::read('build/catastrophe.min.js'));
+  minify_yui(qw|-m build/catastrophe.js|);
+  file::write('build/catastrophe.min.js', $header . file::read('build/catastrophe.min.js'));
+}
 
 __
 meta::function('rm', <<'__');
@@ -1709,6 +1714,14 @@ meta::sdoc('readme', <<'__');
 Catastrophe tracing debugger.
 Catastrophe is a tracing non-interactive debugger for Javascript. It works by recording every step of a function's execution and then allowing you to query the trace to find problems. Note
 that this is not a fast library; on my netbook it takes more than 30 seconds to annotate a minified jQuery without pretracing.
+
+  Implementation status.
+  This project doesn't work right now.
+
+  | patterns:            broken (nothing gets traced)
+    native eval tracing: untested, but what could possibly be wrong?
+    pretrace mode:       broken (invalid generated code)
+    trace mode:          broken (invalid generated code)
 
   Quickstart guide.
   This guide goes through a quick example of how to use Catastrophe to find problems in client-side code. You can also use it on the server-side, for instance in node.js.

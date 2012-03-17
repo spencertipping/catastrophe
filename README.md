@@ -3,6 +3,15 @@
 Catastrophe is a tracing non-interactive debugger for Javascript. It works by recording every step of a function's execution and then allowing you to query the trace to find problems. Note
 that this is not a fast library; on my netbook it takes more than 30 seconds to annotate a minified jQuery without pretracing.
 
+## Implementation status
+
+This project doesn't work right now.
+
+    patterns:            broken (nothing gets traced)
+    native eval tracing: untested, but what could possibly be wrong?
+    pretrace mode:       broken (invalid generated code)
+    trace mode:          broken (invalid generated code)
+
 ## Quickstart guide
 
 This guide goes through a quick example of how to use Catastrophe to find problems in client-side code. You can also use it on the server-side, for instance in node.js.
