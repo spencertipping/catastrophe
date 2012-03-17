@@ -2003,7 +2003,9 @@ requires no annotation within the source to activate substitution. Fortunately, 
                   hook_ref                  = new $.syntax(options.hook_name),
                   pre_hook_form             = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
                   hook_form                 = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
-                  remove_markers_from(tree) = tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
+
+                  remove_markers_memo       = {},
+                  remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
                   hook(t)                   = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
                   hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],

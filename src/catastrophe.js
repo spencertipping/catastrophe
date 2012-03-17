@@ -48,8 +48,8 @@ return( ( ( [rule(qs1m,qs1n) ,rule(qs1o,qs1p) ,rule(qs1q,qs1r) ,rule(qs1s,qs1t) 
 for(var xr=new xs.constructor() ,xi=0,xl=xs.length;
 xi<xl;
  ++xi)x=xs[xi] ,xr.push( (rule(x[0] ,x[1] ) ) ) ;
-return xr} ) .call(this, ( (binary) .concat( (assign) ) ) ) ) ) ) .concat( ( [rule(qs30,qs31) ,rule(qs32,qs33) ,rule(qs34,qs35) ,rule(qs36,qs37) ,rule(qs38,qs39) ,rule(qs3a,qs3b) ,rule(qs3c,qs3d) ,rule(qs3e,qs3f) ,rule(qs3g,qs3h) ] ) ) ) } ) .call(this) ,hook_ref=new $.syntax(options.hook_name) ,pre_hook_form= (qs3i) .replace( {h:hook_ref} ) ,hook_form= (qs3j) .replace( {h:hook_ref} ) ,remove_markers_from=function(tree) {;
-return tree.rmap( (function(n) {return n.data=== '[]' &&$.is_gensym(n[0] .data) ?remove_markers_from(n[1] ) :false} ) ) } ,hook=function(t) {;
+return xr} ) .call(this, ( (binary) .concat( (assign) ) ) ) ) ) ) .concat( ( [rule(qs30,qs31) ,rule(qs32,qs33) ,rule(qs34,qs35) ,rule(qs36,qs37) ,rule(qs38,qs39) ,rule(qs3a,qs3b) ,rule(qs3c,qs3d) ,rule(qs3e,qs3f) ,rule(qs3g,qs3h) ] ) ) ) } ) .call(this) ,hook_ref=new $.syntax(options.hook_name) ,pre_hook_form= (qs3i) .replace( {h:hook_ref} ) ,hook_form= (qs3j) .replace( {h:hook_ref} ) ,remove_markers_memo= { } ,remove_markers_from=function(tree) {;
+return! !remove_markers_memo[tree.id() ] || (remove_markers_memo[tree.id() ] =tree.rmap( (function(n) {return n.data=== '[]' &&$.is_gensym(n[0] .data) ?remove_markers_from(n[1] ) :false} ) ) ) } ,hook=function(t) {;
 return( (options.pre_trace?pre_hook_form:hook_form) ) .replace( {_x:new $.ref(remove_markers_from(t) ) ,_value:t} ) } ,hooks= [rule(qs3k,function(_) {return hook(_._x) } ) ] ,closures= [rule(qs3l,qs3m) ] ;
 return( (tracing_rules() ) .concat( (custom_rules() ) ) ) } ) .call(this) } ;
 return($.grammar( [ 'L' , 'U' , 'R' , 'C' , 'H' , 'S' ] , {initial:qs3n} ,cc) ) } ) .call(this) } ,hook_for=function(options) {;
