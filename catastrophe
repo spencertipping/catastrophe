@@ -2076,19 +2076,16 @@ requires no annotation within the source to activate substitution. Fortunately, 
   via that alias. So, for example, this code will generate an untraced function:
 
   | var f = Function;
-    var g = new f('return x + y', 'x', 'y');
+    var g = new f('x', 'y', 'return x + y');
     // g is untraced
 
   Theoretically, this gap could be closed by alias-checking each constructor invocation and function call. However, I'm not really up for implementing that at the moment, and aliasing these
   things is so uncommon that I doubt it's an issue.
 
           eval_tracer_for(self) = "self(_ /!$.parse).toString()".qf,
-          eval_mocks_for(self)  = {'R[eval(_x)]':          'eval(trace(R[_x]))'.qs /~replace/ {trace: new $.ref(eval_tracer_for(self))},
-                                   'R[new Function(_xs)]':  patch_first_argument -where [frame       = 'new Function(R[_xs])'.qs,
-                                                                                         trace_frame = 'trace(_x)'.qs /~replace/ {trace: new $.ref(eval_tracer_for(self))},
-                                                                                         trace(xs)   = xs.flatten(',').map(i ? x : trace_frame.replace({_x: x}), given [x, i]).unflatten(),
-
-                                                                                         patch_first_argument(match) = frame /~replace/ {_xs: match._xs /!trace}]},
+          eval_mocks_for(self)  = {'R[eval(_x)]': 'H[eval(trace(R[_x]))]'.qs, 'R[new Function(_x)]':      'H[new Function(trace(R[_x]))]'.qs,
+                                                                              'R[new Function(_xs, _x)]': 'H[new Function(R[_xs], trace(R[_x]))]'.qs}
+                                  %v*[x /~replace/ {trace: new $.ref(eval_tracer_for(self))}] -seq,
 
   Trace compiler.
   This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
