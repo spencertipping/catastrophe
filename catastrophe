@@ -1937,7 +1937,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
                                 'S[break _label]'.qs             /-rule/ 'break _label'.qs,               'S[break]'.qs                       /-rule/ 'break'.qs,
                                 'S[return _x]'.qs                /-rule/ 'return R[_x]'.qs,               'S[return]'.qs                      /-rule/ 'return'.qs,
 
-                                'for (_name in _v) _body'.qs     /-rule/ 'for (_name in R[_v]) _body'.qs,       // pathological case; we don't want the 'in' turning to an R[]
+                                'S[for (_name in _v) _body]'.qs  /-rule/ 'for (_name in R[_v]) _body'.qs,       // pathological case; we don't want the 'in' turning to an R[]
 
                                 'S[switch (_value) {_cases}]'.qs /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-rule/ '_x: S[_y]'.qs],                       // covers both 'case x:' and labels within blocks (: left-associates)
