@@ -43,6 +43,20 @@ You don't have to use global functions; you can close over local values by using
 
 Note that mocking doesn't turn of tracing by default; if you want to use Catastrophe just to mock things, use 'trace: false' in the options hash.
 
+### Trace patterns
+
+If you're debugging a large body of code, you often won't want to trace everything. Instead, you'll be interested in particular expressions that follow a given syntactic pattern. To save
+time during the transformation step, you can choose to annotate only those subexpressions:
+
+    var tracer = catastrophe({patterns: ['foo(_x)', '_y + bar']});
+    tracer(function () {
+      if (foo(6)) {                                   // this is traced
+        return y + bif;                               // not traced
+      } else {
+        return 'hi there'.toUpperCase() + bar;        // traced
+      }
+    })();
+
 ### Compilation environment
 
 Any function you trace will lose its closure bindings. Normally this isn't a problem because you'd generally want to trace global functions. But you can reconstruct any bindings that are
@@ -83,15 +97,17 @@ that an expression is going to be evaluated but hasn't yet been reached. So, for
 Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
 in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, allow_mock_annotations: true, trace_native_eval_forms: true, environment: {}, pre_trace: true, trace: true,
-                                                                 timestamps: true, hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1 << 20},
+          tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,        trace_native_eval_forms: true,  environment: {},           pre_trace: true,
+                                                            timestamps: true,             hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,       global: global,  trace_log_size: 1 << 20,
+                                                              patterns: null,                 trace: true},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
                                               eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(self) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
-                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: []})
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: [],
+                                                                                           patterns: settings.patterns && settings.patterns *$.parse -seq})
 
                                                                 /-$.merge/ wcapture [options                = settings,
 
@@ -269,7 +285,8 @@ be unused.
 
                 remove_markers_memo       = {},
                 remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
-                hook(t)                   = t.is_constant() ? t : (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+                hook(t)                   = t.is_constant() || (options.patterns && options.patterns |![x /~match/ t] |seq) ? t :
+                                              (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
                 hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 

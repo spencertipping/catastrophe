@@ -1707,10 +1707,8 @@ exists $data{"sdoc::$attribute"} ? sdocp("sdoc::$attribute") : undef;
 __
 meta::sdoc('readme', <<'__');
 Catastrophe tracing debugger.
-Catastrophe is a tracing non-interactive debugger for Javascript. It works by recording every step of a function's execution and then allowing you to query the trace to find problems. It can
-also speculatively execute code under given hypothetical conditions. This, in turn, produces more traces that you can query.
-
-NOTE! This project doesn't work yet and may change significantly before it does.
+Catastrophe is a tracing non-interactive debugger for Javascript. It works by recording every step of a function's execution and then allowing you to query the trace to find problems. Note
+that this is not a fast library; on my netbook it takes more than 30 seconds to annotate a minified jQuery without pretracing.
 
   Quickstart guide.
   This guide goes through a quick example of how to use Catastrophe to find problems in client-side code. You can also use it on the server-side, for instance in node.js.
@@ -1733,20 +1731,13 @@ NOTE! This project doesn't work yet and may change significantly before it does.
     Let's suppose you want to find jQuery selections that ended up containing no DOM nodes. This can be done by first filtering for all jQuery calls, and then filtering again for those whose
     results' length is zero. Here's what that looks like in the Javascript console:
 
-    | > tracer.find('$(_x)').filter('x.value.length === 0').map('_x.value')
-      ['selector1', 'selector2', ...]
+    | > tracer.find('$(_x)').filter('x.value.length === 0').map('match._x.tree.toString()')
+      ['expression1', 'expression2', ...]
       >
 
-    Now suppose that the code is written such that jQuery takes on a variety of different names. The query above won't work because it assumes that jQuery is called `$`. To fix it, we'll need
-    to match on any function call whose function object is equal to the jQuery global:
+    In the query above, things starting with an underscore were wildcards. If you want to bind to a specific constant that happens to start with an underscore, you can use a filter:
 
-    | > tracer.find('_f(_x)').filter('_f.value === jQuery && !_x.value.length').map('_x.value')
-      ['selector1', 'selector2', ...]
-      >
-
-    In the queries above, things starting with an underscore were wildcards. If you want to bind to a specific constant that happens to start with an underscore, you can use a filter:
-
-    | > tracer.find('_x + _y').filter('_x.data === "_x"')
+    | > tracer.find('_x + _y').filter('match._x.tree.data === "_x"')
 
     This matches only additions whose left-hand side is literally the identifier `_x`.
 
@@ -1793,6 +1784,19 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
     Note that mocking doesn't turn of tracing by default; if you want to use Catastrophe just to mock things, use 'trace: false' in the options hash.
 
+    Trace patterns.
+    If you're debugging a large body of code, you often won't want to trace everything. Instead, you'll be interested in particular expressions that follow a given syntactic pattern. To save
+    time during the transformation step, you can choose to annotate only those subexpressions:
+
+    | var tracer = catastrophe({patterns: ['foo(_x)', '_y + bar']});
+      tracer(function () {
+        if (foo(6)) {                                   // this is traced
+          return y + bif;                               // not traced
+        } else {
+          return 'hi there'.toUpperCase() + bar;        // traced
+        }
+      })();
+
     Compilation environment.
     Any function you trace will lose its closure bindings. Normally this isn't a problem because you'd generally want to trace global functions. But you can reconstruct any bindings that are
     important by using the 'environment' option:
@@ -1830,15 +1834,17 @@ requires no annotation within the source to activate substitution. Fortunately, 
     Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
     in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
-          tracer_for(options) = trace -where [default_options = {mocks: {}, allow_mock_annotations: true, trace_native_eval_forms: true, environment: {}, pre_trace: true, trace: true,
-                                                                 timestamps: true, hook_name: 'catastrophe_hook' /!$.gensym, hook: null, global: global, trace_log_size: 1 << 20},
+          tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,        trace_native_eval_forms: true,  environment: {},           pre_trace: true,
+                                                            timestamps: true,             hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,       global: global,  trace_log_size: 1 << 20,
+                                                              patterns: null,                 trace: true},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
                                               eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(self) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
-                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: []})
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: [],
+                                                                                           patterns: settings.patterns && settings.patterns *$.parse -seq})
 
                                                                 /-$.merge/ wcapture [options                = settings,
 
@@ -2008,7 +2014,8 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                   remove_markers_memo       = {},
                   remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
-                  hook(t)                   = t.is_constant() ? t : (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+                  hook(t)                   = t.is_constant() || (options.patterns && options.patterns |![x /~match/ t] |seq) ? t :
+                                                (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
                   hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 
