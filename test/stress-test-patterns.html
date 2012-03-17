@@ -7,7 +7,7 @@
 
   <script src='../build/catastrophe.js'></script>
   <script>
-    var tracer = catastrophe({hook_name: '$$c', patterns: ['document.getElementById(_x)', 'encodeURIComponent(_x)']});
+    var tracer = catastrophe({hook_name: '$$c', patterns: ['_x.getElementById(_y)', 'encodeURIComponent(_x)']});
 
     var start_time = +new Date();
     tracer(function () {

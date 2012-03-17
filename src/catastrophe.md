@@ -229,8 +229,8 @@ or array entry separator.
                              'R[_x(_y)]'.qs    /-rule/ 'H[R[_x](R[_y])]'.qs,
                              'R[_x._y(_z)]'.qs /-rule/ 'H[R[_x]._y(R[_z])]'.qs,  'R[_x[_y](_z)]'.qs  /-rule/ 'H[R[_x][R[_y]](R[_z])]'.qs,
 
-                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[_x, typeof R[_x]]'.qs,
-                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[_x, typeof _x]'.qs,
+                             'R[void _x]'.qs   /-rule/ 'void R[_x]'.qs,          'R[typeof _x]'.qs   /-rule/ 'H[typeof R[_x]]'.qs,
+                             'R[_x: _y]'.qs    /-rule/ '_x: R[_y]'.qs,           'R[typeof _x@0]'.qs /-rule/ 'H[typeof _x]'.qs,
 
                              'R[+_x]'.qs       /-rule/ 'H[+R[_x]]'.qs,           'R[~_x]'.qs         /-rule/ 'H[~R[_x]]'.qs,
                              'R[-_x]'.qs       /-rule/ 'H[-R[_x]]'.qs,           'R[!_x]'.qs         /-rule/ 'H[!R[_x]]'.qs,
@@ -246,11 +246,8 @@ or array entry separator.
                              'R[function _f () {_body}]'.qs    /-rule/ 'function _f () {C; S[_body]}'.qs,     'R[function _f () {}]'.qs    /-rule/ 'function _f () {C}'.qs,
                              'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs,  'R[function _f (_xs) {}]'.qs /-rule/ 'function _f (_xs) {C}'.qs] -seq
 
-        -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw
-                         *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[_x #{x} _y, R[_x] #{x} R[_y]]')]] -seq -ahead,
-
-                assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw
-                         *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[_x #{x} _y, L[_x] #{x} R[_y]]')]] -seq -ahead],
+        -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
+                assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
 
 ### Hook rules
 
@@ -285,7 +282,7 @@ be unused.
 
                 remove_markers_memo       = {},
                 remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
-                hook(t)                   = t.is_constant() || (options.patterns && options.patterns |![x /~match/ t] |seq) ? t :
+                hook(t)                   = t.is_constant() || (options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq) ? t :
                                               (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
                 hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
