@@ -183,9 +183,9 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                 'S[switch (_value) {_cases}]'.qs /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-rule/ '_x: S[_y]'.qs,                        // covers both 'case x:' and labels within blocks (: left-associates)
 
-                                'S[try _x catch (_e) _y finally _z]'.qs /-rule/ 'try S[_x] catch (_e) S[_y] finally S[_z]'.qs,
-                                'S[try _x catch (_e) _y]'.qs            /-rule/ 'try S[_x] catch (_e) S[_y]'.qs,
-                                'S[try _x finally _y]'.qs               /-rule/ 'try S[_x] finally S[_y]'.qs],
+                                'S[try {_x} catch (_e) _y finally _z]'.qs /-rule/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
+                                'S[try {_x} catch (_e) _y]'.qs            /-rule/ 'try {S[_x]} catch (_e) S[_y]'.qs,
+                                'S[try {_x} finally _y]'.qs               /-rule/ 'try {S[_x]} finally S[_y]'.qs],
 
     # Lvalue cases.
 #     In some of these cases we can transform pieces of the lvalue but leave the lvalue itself intact. For example, 'foo.bar[bif]' contains 'foo.bar' as an rvalue, so we are free to transform
@@ -202,7 +202,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
 #     or array entry separator.
 
-                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
+                  rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,                             // empty case required for [] and {}
                              'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,               // TODO: trace this with better granularity
                              'R[_x._y]'.qs     /-rule/ 'H[R[_x]._y]'.qs,         'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
                              'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
@@ -221,12 +221,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
                             (binary + assign) *[x[0] /-rule/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs              /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs,
-
-                             'R[function () {_body}]'.qs       /-rule/ 'function () {C; S[_body]}'.qs,        'R[function () {}]'.qs       /-rule/ 'function () {C}'.qs,
-                             'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,     'R[function (_xs) {}]'.qs    /-rule/ 'function (_xs) {C}'.qs,
-                             'R[function _f () {_body}]'.qs    /-rule/ 'function _f () {C; S[_body]}'.qs,     'R[function _f () {}]'.qs    /-rule/ 'function _f () {C}'.qs,
-                             'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs,  'R[function _f (_xs) {}]'.qs /-rule/ 'function _f (_xs) {C}'.qs] -seq
+                            ['R[_x ? _y : _z]'.qs /-rule/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-rule/ 'function (_xs) {C; S[_body]}'.qs,
+                                                                                         'R[function _f (_xs) {_body}]'.qs /-rule/ 'function _f (_xs) {C; S[_body]}'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
@@ -346,10 +342,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #     could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
 
           fill_empty(n)     = '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
-          fill_empties(t)   = tree /~reach/ fill_empty,
-
           compiler(options) = trace_and_compile -where [trace                             = grammar(options),
-                                                        wrapped_trace                     = $("trace({_x: fill_empties(_)})".qf),
+                                                        wrapped_trace                     = $("trace({_x: _ /~reach/ fill_empty})".qf),
                                                         trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
                                                                                                              {transparent_errors: false, gensym_renaming: false})]]});
 
