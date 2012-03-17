@@ -1847,9 +1847,9 @@ requires no annotation within the source to activate substitution. Fortunately, 
     Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
     in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
-          tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,        trace_native_eval_forms: true,  environment: {},           pre_trace: true,
-                                                            timestamps: true,             hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,       global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                 trace: true},
+          tracer_for(options) = trace -where [default_options = {mocks: {},           allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},
+                                                             hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,                   global: global,  trace_log_size: 1 << 20,
+                                                              patterns: null,                          trace: true,                pre_trace: true},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
@@ -1859,16 +1859,16 @@ requires no annotation within the source to activate substitution. Fortunately, 
                                               trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: [],
                                                                                            patterns: settings.patterns && settings.patterns *$.parse -seq})
 
-                                                                /-$.merge/ wcapture [options                = settings,
+                                                                /-$.merge/ wcapture [options                 = settings,
 
-                                                                                     find(pattern)          = collection(trace_log %[t /~match/ x.tree] -seq, t) -where [t = $.parse(pattern)],
-                                                                                     errors()               = error_log *[collection(x, '_x')] -seq,
+                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree && xi] -seq, trace_log, t),
+                                                                                     errors()                = error_log *[collection(x, '_x')] -seq,
 
-                                                                                     trace_log              = options.trace_log,
-                                                                                     error_log              = options.error_log,
-                                                                                     hook                   = options.hook -oeq- hook_for(options),
-                                                                                     install_hook()         = options.global && (options.global[options.hook_name] = hook),
-                                                                                     remove_hook()          = options.global && delete options.global[options.hook_name]]
+                                                                                     trace_log               = options.trace_log,
+                                                                                     error_log               = options.error_log,
+                                                                                     hook                    = options.hook -oeq- hook_for(options),
+                                                                                     install_hook()          = options.global && (options.global[options.hook_name] = hook),
+                                                                                     remove_hook()           = options.global && delete options.global[options.hook_name]]
 
                                                                 -se- it.install_hook()],
 
@@ -1876,15 +1876,49 @@ requires no annotation within the source to activate substitution. Fortunately, 
   Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what
   you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
 
-          collection(x, pattern) = x /-$.merge/ collection_methods -se [it.match_context = pattern],
-          collection_methods     = wcapture [function_compiler            = $(':all'),
-                                             promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
-                                             compile_string(s)            = 'given.x [#{s}]' / this.match_variables_for(this.match_context) /-function_compiler/ {unbound_closure: true},
+    Pattern selection.
+    The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
+    tree syntax, so any identifiers that begin with an underscore are match variables and will become available later on. The pattern you select initially will determine which variables are
+    bound in the selectors you use later on.
 
-                                             match_variables_for(pattern) = pattern.collect('_.is_wildcard()'.qf) *[[x, true]] /object -seq,
+          collection(xis, xs, pattern) = xis / {xs: xs, pattern: pattern} /-$.merge/ collection_methods,
+          collection_methods           = wcapture [function_compiler            = $(':all'),
+                                                   promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
+                                                   compile_string(s)            = s / this.match_variables_for(this.pattern) /-function_compiler/ {unbound_closure: true},
 
-                                             map(s)                       = collection(this *[f(this.match_context /~match/ x.tree)(x)] -seq, this.match_context) -where [f = this.promote(s)],
-                                             filter(s)                    = collection(this %[f(this.match_context /~match/ x.tree)(x)] -seq, this.match_context) -where [f = this.promote(s)]],
+                                                   match_variables_for(pattern) = ('_ xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x, true]] /object -seq,
+
+    Selector methods.
+    These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
+    function's body. This string is compiled against several closure variables:
+
+    | x   the current event record; contains things like .tree, .value, .time, etc
+      xi  the index of the current event record in the log
+      _   the current syntax tree
+      _x  match variables; one for each wildcard in the syntax pattern
+      v() returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
+
+    So, for example, here's a basic query:
+
+    | tracer.find('f(_x)').map('_x + ": " + v(_)')
+
+    This query shows you each input to f() followed by the corresponding output.
+
+                                                   select(xs)                     = collection(xs, this.xs, this.pattern),
+                                                   iteration_context(x)           = this.pattern /~match/ this.xs[x].tree /-$.merge/
+                                                                                    wcapture [xs = this.xs, xi = x, r(t) = xs |~!r[ri <= x ? r.tree === t : (ri = x + 1, 0)][r] |seq,
+                                                                                                                    v(t) = r(t).value,  t(t) = r(t).time,
+                                                                                                                   dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)]],
+
+                                                   map   (f, f = this.promote(f)) =             this *this.iteration_context *f -seq,
+                                                   filter(f, f = this.promote(f)) = this.select(this *this.iteration_context %f -seq),
+
+                                                   to_a()                         = this *[this.xs[x]] -seq,
+
+                                                   step(n)                        = this.select(this *[x + n] -seq),
+                                                   adjacent(n)                    = this.select(this *~![ni[x - n, x + n] -seq] -seq),
+                                                   to  (t, t = $.parse(t))        = this.select(this *~!o[ni[o, this.xs |  [xi > o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq]    -seq] -seq),
+                                                   from(t, t = $.parse(t))        = this.select(this *~!o[ni[   this.xs |~![xi < o ? t /~match/ x.tree : (xi = o, 0)][xi] |seq, o] -seq] -seq)],
 
   Trace grammar implementation.
   Javascript is fairly straightforward to implement. The only thing we need to do is track expression roles and make sure that our instrumentation code doesn't change them. For example, we
@@ -2043,14 +2077,14 @@ requires no annotation within the source to activate substitution. Fortunately, 
   Catastrophe's default hook function does several things that may be useful:
 
   | 1. Builds up a backtrace for each error that occurs, provided that pre-tracing is enabled
-    2. Records a timestamp for each pre-trace and trace entry (this can be disabled by using timestamps: false)
+    2. Records a timestamp for each pre-trace and trace entry
     3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size)
 
   Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
 
           hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                              enqueue(t)        = bt /~push/ {tree: t, time: options.timestamp && +new Date()},
-                                              resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: options.timestamp && +new Date(), pre_trace: options.pre_trace && dequeue(t)}
+                                              enqueue(t)        = bt /~push/ {tree: t, time: +new Date()},
+                                              resolve(t, v)     = trace_log /~push/ {tree: t, value: v, time: +new Date(), pre_trace: options.pre_trace && dequeue(t)}
                                                                   -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
                                                                   -then- v,
 

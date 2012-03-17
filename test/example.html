@@ -1,7 +1,7 @@
 <!doctype html>
 <html>
 <body>
-  <input id='n' />
+  <input id='n' value='10' />
   <button id='factorial'>Compute factorial</button>
   <button id='fibonacci'>Compute fibonacci</button>
   <label id='output' />
@@ -30,6 +30,8 @@
       $('#fibonacci').click(function (e) {
         $('#output').text(fibonacci(+$('#n').val()));
       });
+
+      $('#factorial').click();
     }));
     console.log('traced the function in ' + (+new Date() - start_time) + 'ms');
   </script>
