@@ -218,7 +218,7 @@ The terminal markers don't generate any others; they are rewritten into the fina
 
             trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
                                                    index(t)    = t /~reach/ "options.index[_.id()] = _".qf,
-                                                   trace(tree) = grammar({_x: index(tree)})]
+                                                   trace(tree) = grammar({_x: tree /!index /!mark_all_closures})]
 
             -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
@@ -271,7 +271,7 @@ through to rvalue expressions; this reflects the fact that you can have an expre
                                 'S[switch (_value) {_cases}]'.qs /-r/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-r/ '_x: S[_y]'.qs,                           // covers both 'case x:' and labels within blocks (: left-associates)
 
-                                'S[function _f(_xs) {_body}'.qs  /-r/ 'function _f(_xs) {C; S[_body]}'.qs,      // no hook around statement-mode functions (see rvalue cases below)
+                                'S[function _f(_xs; _scope) {_body}'.qs   /-r/ 'function _f(_xs; _scope) {C[_scope]; S[_body]}'.qs,
 
                                 'S[try {_x} catch (_e) _y finally _z]'.qs /-r/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
                                 'S[try {_x} catch (_e) _y]'.qs            /-r/ 'try {S[_x]} catch (_e) S[_y]'.qs,
@@ -313,8 +313,8 @@ or array entry separator.
 
                             (binary + assign) *[x[0] /-r/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs) {_body}]'.qs    /-r/ 'H[function (_xs) {C; S[_body]}]'.qs,
-                                                                                      'R[function _f (_xs) {_body}]'.qs /-r/ 'H[function _f (_xs) {C; S[_body]}]'.qs] -seq
+                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs; _scope) {_body}]'.qs    /-r/ 'H[function (_xs) {C[_scope]; S[_body]}]'.qs,
+                                                                                      'R[function _f (_xs; _scope) {_body}]'.qs /-r/ 'H[function _f (_xs) {C[_scope]; S[_body]}]'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
                 assign = '= += -= *= /= %= <<= >>= >>>= &= |= ^='.qw                                *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[L[_x] #{x} R[_y]]')]] -seq -ahead],
@@ -340,14 +340,14 @@ pre-tracing.
 
 Here is the information provided to the hook function:
 
-    pre-trace: hook(syntax-node)
+    pre-trace: hook(syntax-node) -> boolean                 (if false, the expression will not be evaluated)
     trace:     hook(syntax-node, value) -> value
 
-It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! If no value is given to the hook function, its return value will
-be unused.
+It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! The pre-hook's return value is also important. If it returns a
+falsy value, the expression will not be evaluated. You can use this to skip forms.
 
                 hook_ref      = new $.syntax(options.hook_name),
-                pre_hook_form = '(h(_x), h(_x, (_value)))'.qs /~replace/ {h: hook_ref},
+                pre_hook_form = 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
                 hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
                 hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
@@ -370,7 +370,14 @@ first argument will be an object containing state changes. Here's roughly what t
 
 The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
-                closures = ['C'.qs /-r/ 'null'.qs]]],                                                                                         // TODO: implement this
+                closure_pattern          = 'if (this === _hook) if (arguments.length) return _set; else return _get'.qs,
+                closure_setter_case(v)   = '_name in arguments[0] && (_v = arguments[0]._v)'.qs /~replace/ {_name: $.syntax.from_string(v), _v: v},
+
+                closure_state_object(vs) = vs /keys *[[x, new $.syntax(x)]] /object /seq /!$.syntax.from_object,
+                closure_state_setter(vs) = new $.syntax(',', vs /keys *closure_setter_case -seq).unflatten() -re [it.length ? it : $.empty],
+
+                closure_hook(vs)         = closure_pattern /~replace/ {_hook: options.hook_name, _get: closure_state_object(vs), _set: closure_state_setter(vs)},
+                closures                 = ['C[_scope]'.qs /-r/ "closure_hook(_._scope.metadata)".qf]]],
 
 ## Hook function
 
@@ -379,16 +386,19 @@ Catastrophe's default hook function does several things that may be useful:
     1. Builds up a backtrace for each error that occurs, provided that pre-tracing is enabled
     2. Records a timestamp for each pre-trace and trace entry
     3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size)
+    4. Maintains a sequential event counter and annotates each pre and post-trace record with a unique value
 
 Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
 
             hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                                enqueue(t)        = bt /~push/ $.merge(new record(t), {time: +new Date()}),
-                                                resolve(t, v)     = trace_log /~push/ $.merge(new record(t), {value: v, time: +new Date(), pre_trace: options.pre_trace && dequeue(t)})
+                                                enqueue(t)        = bt /~push/ $.merge(new record(t), {time: +new Date(), id: ++id}),
+                                                resolve(t, v)     = trace_log /~push/ $.merge(new record(t), {value: v, time: +new Date(), id: ++id, pre_trace: options.pre_trace && dequeue(t)})
                                                                     -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
                                                                     -then- v,
 
-                                                record_methods    = capture [tree() = options.index[this.tree_id]],
+                                                record_methods    = capture [tree()           = options.index[this.tree_id],
+                                                                             contains(moment) = !options.pre_trace || moment >= this.pre_trace.id && moment <= this.id],
+
                                                 record            = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
 
                                                 dequeue(t)        = bt.length && bt[bt.length - 1].tree_id === t ? bt.pop() : dequeue_remote(t),
@@ -401,6 +411,7 @@ Normally the hook is bound as a global variable, but you can disable this by set
                                                                                                                        error_trace = bt.splice(index, bt.length - index)],
 
                                                 trim_trace_log()  = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
+                                                id                = 0,
                                                 bt                = options.pre_trace && [],
                                                 trace_log         = options.trace_log,
                                                 error_log         = options.pre_trace && options.error_log -ocq- []],
@@ -410,15 +421,25 @@ Normally the hook is bound as a global variable, but you can disable this by set
 We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
 set differences to figure out which variables are actually closure variables as opposed to locals.
 
-            scope_closed_reach(f)(t) = f(t) -then- f /~each/ "scope_closed_each(_, f) -unless- _.data === 'function'".qf,
+            scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless- _.data === 'function'".qf,
 
-            immediate_scope(t)       = scope_closed_reach(visit)(t) -then- scope -where [visit(n)       = scope[n.data] -eq- true -when- n.is_identifier(), scope = {}],
-            local_scope(t)           = scope_closed_reach(visit)(t) -then- scope -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
+            immediate_scope(t)       = scope_closed_reach(visit, t) -then- scope -where [visit(n)       = scope[n.data] -eq- true -when- n.is_identifier(), scope = {}],
+            local_scope(t)           = scope_closed_reach(visit, t) -then- scope -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
                                                                                          visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = true : normal(vs)],
                                                                                          normal(vs)     = +vs *![scope[x.flatten('=')[0].data] = true] -seq,
                                                                                          scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, true]] /object -seq],
 
             closure_scope(t)         = local_scope(t) %k%![immediate /-Object.prototype.hasOwnProperty.call/ x] -seq -where [immediate = immediate_scope(t)],
+
+### Scope marking
+
+  This is an odd hack. We want to put the closure scope data into the syntax tree, but it's important not to store it directly on a node that will later change. The only way to do this is to
+  make it a nullary child of the function that we can later retrieve and hand over to the C[] rule in the tracing grammar.
+
+Note that this code will break if the function's list of formals is nullary. It needs to be an actual 'empty' node rather than being no node at all.
+
+          mark_closure(f_node) = f_node -se [it[0][0] = '_xs; _metadata'.qs /~replace/ {_xs: it[0][0], _metadata: new $.metadata_node(f_node /!closure_scope, 'scope')}],
+          mark_all_closures(t) = t.collect("_.data === 'function'".qf) *!mark_closure -seq -then- t,
 
 ## Eval tracing
 
