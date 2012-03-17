@@ -37,11 +37,11 @@ Tracers are configured when you create them. You do this by passing a hash of op
       eval(5);
     })();
 
-You don't have to use global functions; you can close over local values by using refs:
+You don't have to use global functions; you can close over local values by using refs (though refs will fail within eval-traced code):
 
     tracer = catastrophe({mocks: {'eval(_x)': 'log_and_eval(_x)'.qs.replace({log_and_eval: new $.ref(given.x in console.log(x) -then- eval(x))})}});
 
-Note that mocking doesn't turn of tracing by default; if you want to use Catastrophe just to mock things, use 'trace: false' in the options hash.
+Note that mocking doesn't turn off tracing by default; if you want to use Catastrophe just to mock things, use 'trace: false' in the options hash.
 
 ### Trace patterns
 
@@ -216,12 +216,15 @@ The tracer uses several different markers to track state:
 
 The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-            grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
+            trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'}, cc),
+                                                   trace(tree) = grammar({_x: tree})]
+
+            -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
             -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : ['S[_x]'.qs /-rule/ '_x'.qs],
                     custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
                               -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
-                                      process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate],
+                                      process_mock(tree) = tree.constructor === Function ? tree : tree /!$.parse /!annotate],
 
 ### Unreachable hooks
 
@@ -422,7 +425,7 @@ assume that the global hook has already been installed.
   could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
 
           fill_empty(n)     = n.data.length && '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
-          compiler(options) = trace_and_compile -where [trace                             = grammar(options),
-                                                        wrapped_trace                     = $("trace({_x: _ /~reach/ fill_empty})".qf),
+          compiler(options) = trace_and_compile -where [trace                             = trace_grammar(options),
+                                                        wrapped_trace                     = $("trace(_ /~reach/ fill_empty)".qf),
                                                         trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
                                                                                                              {transparent_errors: false, gensym_renaming: false})]]});
