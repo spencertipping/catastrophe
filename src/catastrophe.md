@@ -128,12 +128,14 @@ Querying is designed to be easy to use from a non-caterwaul console. As such, co
 you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
 
             collection(x, pattern) = x /-$.merge/ collection_methods -se [it.match_context = pattern],
-            collection_methods     = wcapture [function_compiler = $(':all'),
-                                               promote(f)        = f.constructor === Function ? f : this.compile_string(f),
-                                               compile_string(s) = 'given.x [#{s}, where [match = match_context /~match/ x.tree]]' /-function_compiler/ {match_context: this.match_context},
+            collection_methods     = wcapture [function_compiler            = $(':all'),
+                                               promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
+                                               compile_string(s)            = 'given.x [#{s}]' / this.match_variables_for(this.match_context) /-function_compiler/ {unbound_closure: true},
 
-                                               map(s)            = collection(this *f -seq, this.match_context) -where [f = this.promote(s)],
-                                               filter(s)         = collection(this %f -seq, this.match_context) -where [f = this.promote(s)]],
+                                               match_variables_for(pattern) = pattern.collect('_.is_wildcard()'.qf) *[[x, true]] /object -seq,
+
+                                               map(s)                       = collection(this *[f(this.match_context /~match/ x.tree)(x)] -seq, this.match_context) -where [f = this.promote(s)],
+                                               filter(s)                    = collection(this %[f(this.match_context /~match/ x.tree)(x)] -seq, this.match_context) -where [f = this.promote(s)]],
 
 ## Trace grammar implementation
 
