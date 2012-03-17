@@ -9,7 +9,7 @@ This project sort of works right now.
 
     patterns:                        probably broken
     native eval tracing:             untested, but what could possibly be wrong?
-    closure inspection/modification: not yet implemented
+    closure inspection/modification: implemented, but not quite working
     pretrace mode:                   successfully traces example code (too slow for jQuery on my netbook)
     trace mode:                      successfully traces jQuery
 
