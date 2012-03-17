@@ -138,7 +138,7 @@ The terminal markers don't generate any others; they are rewritten into the fina
 
             grammar(options) = $.grammar('L U R C H S'.qw, {initial: 'S[_x]'.qs}, cc) -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
-            -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : [],
+            -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : ['S[_x]'.qs /-rule/ '_x'.qs],
                     custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-rule/ process_mock(x[1] /!process_mock)] -seq
                               -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                       process_mock(tree) = tree instanceof Function ? tree : tree /!$.parse /!annotate],
