@@ -340,8 +340,16 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #   This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
 #   assume that the global hook has already been installed.
 
+    # Empty nodes.
+#     Caterwaul has a questionable (non?)feature. If you parse something like 'if (x) {}', the { node will be nullary; that is, it will have no children at all. This causes patterns like 'if (x)
+#     {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
+#     could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
+
+          fill_empty(n)     = '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
+          fill_empties(t)   = tree /~reach/ fill_empty,
+
           compiler(options) = trace_and_compile -where [trace                             = grammar(options),
-                                                        wrapped_trace                     = $("trace({_x: _})".qf),
+                                                        wrapped_trace                     = $("trace({_x: fill_empties(_)})".qf),
                                                         trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
                                                                                                              {transparent_errors: false, gensym_renaming: false})]]});
 

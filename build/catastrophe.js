@@ -383,8 +383,10 @@ return function(_) {return self($.parse(_) ) .toString() } } ,eval_mocks_for=fun
 return{ 'R[eval(_x)]' : (qs40) .replace( {trace:new $.ref(eval_tracer_for(self) ) } ) , 'R[new Function(_xs)]' : (function( ) {var frame=qs41,trace_frame= (qs42) .replace( {trace:new $.ref(eval_tracer_for(self) ) } ) ,trace=function(xs) {;
 return xs.flatten( ',' ) .map( (function(x,i) {return i?x:trace_frame.replace( {_x:x} ) } ) ) .unflatten() } ,patch_first_argument=function(match) {;
 return(frame) .replace( {_xs:trace(match._xs) } ) } ;
-return(patch_first_argument) } ) .call(this) } } ,compiler=function(options) {;
-return(function( ) {var trace=grammar(options) ,wrapped_trace=$(function(_) {return trace( {_x:_} ) } ) ,trace_and_compile=function(f,environment) {;
+return(patch_first_argument) } ) .call(this) } } ,fill_empty=function(n) {;
+return'([{' .indexOf(n.data) > -1&& !n.length&& (n) .push($.empty) } ,fill_empties=function(t) {;
+return(tree) .reach(fill_empty) } ,compiler=function(options) {;
+return(function( ) {var trace=grammar(options) ,wrapped_trace=$(function(_) {return trace( {_x:fill_empties(_) } ) } ) ,trace_and_compile=function(f,environment) {;
 return wrapped_trace(f,$.merge( { } ,options.environment,environment) , {transparent_errors:false,gensym_renaming:false} ) } ;
 return(trace_and_compile) } ) .call(this) } ;
 return($.merge( (catastrophe=tracer_for) ,statics) ) } ) .call(this) } ) ;
