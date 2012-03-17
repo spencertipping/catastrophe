@@ -5,12 +5,12 @@ that this is not a fast library; on my netbook it takes more than 30 seconds to 
 
 ## Implementation status
 
-This project doesn't work right now.
+This project sort of works right now.
 
-    patterns:            broken (nothing gets traced)
+    patterns:            probably broken
     native eval tracing: untested, but what could possibly be wrong?
-    pretrace mode:       broken (invalid generated code)
-    trace mode:          broken (invalid generated code)
+    pretrace mode:       untested
+    trace mode:          successfully traces jQuery
 
 ## Quickstart guide
 

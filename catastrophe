@@ -1716,12 +1716,12 @@ Catastrophe is a tracing non-interactive debugger for Javascript. It works by re
 that this is not a fast library; on my netbook it takes more than 30 seconds to annotate a minified jQuery without pretracing.
 
   Implementation status.
-  This project doesn't work right now.
+  This project sort of works right now.
 
-  | patterns:            broken (nothing gets traced)
+  | patterns:            probably broken
     native eval tracing: untested, but what could possibly be wrong?
-    pretrace mode:       broken (invalid generated code)
-    trace mode:          broken (invalid generated code)
+    pretrace mode:       untested
+    trace mode:          successfully traces jQuery
 
   Quickstart guide.
   This guide goes through a quick example of how to use Catastrophe to find problems in client-side code. You can also use it on the server-side, for instance in node.js.
