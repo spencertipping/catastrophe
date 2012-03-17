@@ -222,7 +222,7 @@ or array entry separator.
 
                   rvalues = ['R[_x@0]'.qs      /-rule/ 'H[_x]'.qs,               'R[]'.qs            /-rule/ ''.qs,
                              'R[delete _x]'.qs /-rule/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-rule/ 'new _f(R[_xs])'.qs,               // TODO: trace this with better granularity
-                             'R[_x._y]'.qs     /-rule/ 'H[R[_x].y]'.qs,          'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
+                             'R[_x._y]'.qs     /-rule/ 'H[R[_x]._y]'.qs,         'R[(_x)]'.qs        /-rule/ '(R[_x])'.qs,
                              'R[_x[_y]]'.qs    /-rule/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-rule/ 'H[[R[_x]]]'.qs,
                              'R[_x, _y]'.qs    /-rule/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-rule/ 'H[{R[_x]}]'.qs,
 
