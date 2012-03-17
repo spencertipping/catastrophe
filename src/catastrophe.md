@@ -195,9 +195,9 @@ through to rvalue expressions; this reflects the fact that you can have an expre
                                 'S[switch (_value) {_cases}]'.qs /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-rule/ '_x: S[_y]'.qs,                        // covers both 'case x:' and labels within blocks (: left-associates)
 
-                                'S[try {_x} catch (_e) {_y} finally {_z}]'.qs /-rule/ 'try {S[_x]} catch (_e) {S[_y]} finally {S[_z]}'.qs,
-                                'S[try {_x} catch (_e) {_y}]'.qs              /-rule/ 'try {S[_x]} catch (_e) {S[_y]}'.qs,
-                                'S[try {_x} finally {_y}]'.qs                 /-rule/ 'try {S[_x]} finally {S[_y]}'.qs],
+                                'S[try _x catch (_e) _y finally _z]'.qs /-rule/ 'try S[_x] catch (_e) S[_y] finally S[_z]'.qs,
+                                'S[try _x catch (_e) _y]'.qs            /-rule/ 'try S[_x] catch (_e) S[_y]'.qs,
+                                'S[try _x finally _y]'.qs               /-rule/ 'try S[_x] finally S[_y]'.qs],
 
 ### Lvalue cases
 
