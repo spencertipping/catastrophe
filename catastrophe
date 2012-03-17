@@ -1924,9 +1924,9 @@ requires no annotation within the source to activate substitution. Fortunately, 
                                 'S[var _vs, _x]'.qs              /-rule/ 'S[var _vs], R[_x]'.qs,          'S[if (_cond) _body]'.qs            /-rule/ 'if (R[_cond]) S[_body]'.qs,
                                 'S[var _vs, _name@0]'.qs         /-rule/ 'S[var _vs]; S[var _name]'.qs,   'S[if (_cond) _body else _else]'.qs /-rule/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
                                 'S[var _vs, _name = _value]'.qs  /-rule/ 'S[var _vs]; S[var _name = _value]'.qs,
-                                'S[var _name@0]'.qs              /-rule/ 'var L[_name]'.qs,               'S[try _x catch _y finally _z]'.qs  /-rule/ 'try S[_x] catch S[_y] finally S[_z]'.qs,
-                                'S[var _name = _value]'.qs       /-rule/ 'var L[_name] = R[_value]'.qs,   'S[try _x catch _y]'.qs             /-rule/ 'try S[_x] catch S[_y]'.qs,
-                                'S[var _name in _value]'.qs      /-rule/ 'var L[_name] in R[_value]'.qs,  'S[try _x finally _y]'.qs           /-rule/ 'try S[_x] finally S[_y]'.qs,
+                                'S[var _name@0]'.qs              /-rule/ 'var _name'.qs,                  'S[try _x catch _y finally _z]'.qs  /-rule/ 'try S[_x] catch S[_y] finally S[_z]'.qs,
+                                'S[var _name = _value]'.qs       /-rule/ 'var _name = R[_value]'.qs,      'S[try _x catch _y]'.qs             /-rule/ 'try S[_x] catch S[_y]'.qs,
+                                'S[var _name in _value]'.qs      /-rule/ 'var _name in R[_value]'.qs,     'S[try _x finally _y]'.qs           /-rule/ 'try S[_x] finally S[_y]'.qs,
                                                                                                           'S[throw _x]'.qs                    /-rule/ 'throw R[_x]'.qs,
                                 'S[for (_x) _body]'.qs           /-rule/ 'for (S[_x]) S[_body]'.qs,
                                 'S[do _body while (_cond)]'.qs   /-rule/ 'do S[_body] while (R[_cond])'.qs,
@@ -1937,7 +1937,7 @@ requires no annotation within the source to activate substitution. Fortunately, 
                                 'S[break _label]'.qs             /-rule/ 'break _label'.qs,               'S[break]'.qs                       /-rule/ 'break'.qs,
                                 'S[return _x]'.qs                /-rule/ 'return R[_x]'.qs,               'S[return]'.qs                      /-rule/ 'return'.qs,
 
-                                'for (_name in _v) _body'.qs     /-rule/ 'for (L[_name] in R[_v]) _body'.qs,    // pathological case; we don't want the 'in' turning to an R[]
+                                'for (_name in _v) _body'.qs     /-rule/ 'for (_name in R[_v]) _body'.qs,       // pathological case; we don't want the 'in' turning to an R[]
 
                                 'S[switch (_value) {_cases}]'.qs /-rule/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-rule/ '_x: S[_y]'.qs],                       // covers both 'case x:' and labels within blocks (: left-associates)
