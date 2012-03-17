@@ -254,7 +254,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
                   remove_markers_memo       = {},
                   remove_markers_from(tree) = remove_markers_memo[tree.id()] -oeq- tree.rmap(n.data === '[]' && $.is_gensym(n[0].data) ? remove_markers_from(n[1]) : false, given.n),
-                  hook(t)                   = (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
+                  hook(t)                   = t.is_constant() ? t : (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: new $.ref(remove_markers_from(t)), _value: t},
 
                   hooks                     = ['H[_x]'.qs /-rule/ "hook(_._x)".qf],
 

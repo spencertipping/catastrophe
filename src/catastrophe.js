@@ -50,7 +50,7 @@ xi<xl;
  ++xi)x=xs[xi] ,xr.push( (rule(x[0] ,x[1] ) ) ) ;
 return xr} ) .call(this, ( (binary) .concat( (assign) ) ) ) ) ) ) .concat( ( [rule(qs36,qs37) ,rule(qs38,qs39) ,rule(qs3a,qs3b) ,rule(qs3c,qs3d) ,rule(qs3e,qs3f) ,rule(qs3g,qs3h) ,rule(qs3i,qs3j) ,rule(qs3k,qs3l) ,rule(qs3m,qs3n) ] ) ) ) } ) .call(this) ,hook_ref=new $.syntax(options.hook_name) ,pre_hook_form= (qs3o) .replace( {h:hook_ref} ) ,hook_form= (qs3p) .replace( {h:hook_ref} ) ,remove_markers_memo= { } ,remove_markers_from=function(tree) {;
 return! !remove_markers_memo[tree.id() ] || (remove_markers_memo[tree.id() ] =tree.rmap( (function(n) {return n.data=== '[]' &&$.is_gensym(n[0] .data) ?remove_markers_from(n[1] ) :false} ) ) ) } ,hook=function(t) {;
-return( (options.pre_trace?pre_hook_form:hook_form) ) .replace( {_x:new $.ref(remove_markers_from(t) ) ,_value:t} ) } ,hooks= [rule(qs3q,function(_) {return hook(_._x) } ) ] ,closures= [rule(qs3r,qs3s) ] ;
+return t.is_constant() ?t: ( (options.pre_trace?pre_hook_form:hook_form) ) .replace( {_x:new $.ref(remove_markers_from(t) ) ,_value:t} ) } ,hooks= [rule(qs3q,function(_) {return hook(_._x) } ) ] ,closures= [rule(qs3r,qs3s) ] ;
 return( (tracing_rules() ) .concat( (custom_rules() ) ) ) } ) .call(this) } ;
 return($.grammar( [ 'L' , 'U' , 'R' , 'C' , 'H' , 'S' ] , {initial:qs3t} ,cc) ) } ) .call(this) } ,hook_for=function(options) {;
 return(function( ) {var observe=function(t,v) {;
