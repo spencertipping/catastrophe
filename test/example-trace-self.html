@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<body>
+  <input id='n' value='10' />
+  <button id='factorial'>Compute factorial</button>
+  <button id='fibonacci'>Compute fibonacci</button>
+  <label id='output' />
+
+  <script src='http://code.jquery.com/jquery.min.js'></script>
+  <script src='../build/catastrophe.js'></script>
+  <script>
+    var self_tracer = catastrophe({closures: false});
+
+    var start_time = +new Date();
+    self_tracer.trace_module(catastrophe.caterwaul, 'catastrophe');
+    console.log('traced itself in ' + (+new Date() - start_time) + 'ms');
+
+    var tracer = catastrophe();
+    var start_time = +new Date();
+    $(tracer(function () {
+      var factorial = function (x) {
+        return x ? x * factorial(x - 1) : 1;
+      };
+
+      var fibonacci = function (n) {
+        var a = 0, b = 1;
+        while (n--) b = a + (a = b);
+        return b;
+      };
+
+      $('#factorial').click(function (e) {
+        $('#output').text(factorial(+$('#n').val()));
+      });
+
+      $('#fibonacci').click(function (e) {
+        $('#output').text(fibonacci(+$('#n').val()));
+      });
+
+      $('#factorial').click();
+    }));
+    console.log('traced the function in ' + (+new Date() - start_time) + 'ms');
+  </script>
+</body>
+</html>

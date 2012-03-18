@@ -12,7 +12,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   (catastrophe = tracer_for) /-$.merge/ statics
   -where [global  = $.context,
-          statics = capture [caterwaul = $.deglobalize()],
+          statics = capture [caterwaul = $],
 
 # Trace implementation.
 # The tracer is implemented as a syntax tree grammar. However, rather than being used as a modifier (e.g. the -seq macro), this grammar is used to transform unannotated contents. That is, it
@@ -30,7 +30,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # | var log_and_eval = function (x) {console.log(x); return eval(x)},
 #           tracer       = catastrophe({mocks: {'eval(_x)': 'log_and_eval(_x)'}});
 #       tracer(function () {
-#         eval(5);
+#         eval('5');
 #       })();
 
     # You don't have to use global functions; you can close over local values by using refs (though refs will fail within eval-traced code):
@@ -54,7 +54,29 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
     # Closure inspection and manipulation.
 #     By default catastrophe allows you to inspect and manipulate the state of closure variables. Doing this involves changing the function's code in a way that is unlikely to change its
-#     behavior within the context of the original progrma, but you can disable this feature by setting 'closures' to false.
+#     behavior within the context of the original program, but you can disable this feature by setting 'closures' to false. Here's an example of how to access closure state:
+
+    # | var tracer = catastrophe();
+#       tracer(function () {
+#         var x = 10;
+#         var closure = function () {return x};
+#         console.log('initial value: ' + closure());
+#       })();
+
+    # In the console:
+
+    # | > closure = tracer.find('closure = _x').map('v(_x)')[0]
+#       > tracer.closure_state(closure)
+#       { x: 10 }
+#       > closure()
+#       10
+#       > tracer.closure_state(closure, {x: 'hello world'})
+#       > closure()
+#       'hello world'
+#       >
+
+    # Note that closure annotation won't cross a trace boundary. That is, only variables inside the function given to the tracer will be considered as closure data; the rest are assumed to be
+#     globals. If you're tracing at the toplevel this won't be a problem.
 
     # Compilation environment.
 #     Any function you trace will lose its closure bindings. Normally this isn't a problem because you'd generally want to trace global functions. But you can reconstruct any bindings that are
@@ -71,6 +93,17 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #     there are other evaluation forms, you'll need to add more hooks for those.
 
     # Eval tracing can be disabled by setting trace_native_eval_forms to false.
+
+    # Caterwaul integration.
+#     You can use this debugger to trace caterwaul extensions, including having it trace itself. All you need to do is redefine whichever module you want to annotate. So, for example, here's how
+#     you can debug catastrophe itself:
+
+    # | tracer.trace_module(catastrophe.caterwaul, 'catastrophe');
+
+    # This is abstracted into its own function because caterwaul modules may contain expression ref closure state and preserving that state involves some extra work.
+
+          replace_module(trace, c, module) = module /-c.module/ transformed -where [bound_tree  = new c.opaque_tree(module /!c.module) /!c.late_bound_tree,
+                                                                                    transformed = c.compile(bound_tree /!trace, {caterwaul: c}, {gensym_renaming: false})],
 
     # Pre-tracing.
 #     Catastrophe can't apply closed-world analysis to Javascript programs; at the very least, any given platform could provide arbitrarily many native functions. This means that any expression
@@ -93,10 +126,9 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # Any error would leave pre-evaluate steps without corresponding evaluate steps. These steps contain the backtrace for the error. If you don't want this functionality, use 'pre_trace: false'
 #     in the options hash. (Disabling pre-tracing will make the debugging code run faster.)
 
-          tracer_for(options) = trace -where [default_options = {mocks: {},           allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},
-                                                             hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,                   global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                          trace: true,                pre_trace: true,             index: {},
-                                                              closures: true},
+          tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},  closures: true,
+                                                             hook_name: 'hook' /!$.gensym,     hook: null,                   global: global,  trace_log_size: 1 << 20,
+                                                              patterns: null,                 trace: true,                pre_trace: true,             index: {}},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
@@ -113,6 +145,10 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
                                                                                      errors()                = error_log *[collection(x, '_x')] -seq,
 
+                                                                                     trace_module(c, module) = replace_module(this, c, module),
+                                                                                     is_traced(f)            = f.toString() /~indexOf/ $.gensym_entropy() > -1,
+
+                                                                                     closure_state(f, state) = state ? f.call(options.hook, state) : f.call(options.hook),
                                                                                      trace_log               = options.trace_log,
                                                                                      error_log               = options.error_log,
                                                                                      hook                    = options.hook -ocq- hook_for(options),
@@ -169,7 +205,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                                   select(xs)              = collection(xs, this.xs, this.pattern),
                                                   iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
                                                                             wcapture [xs = this.xs,  r(t)  = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
-                                                                                      xi = x,        dt(t) = r0.time - r0.pre_trace.time -where [r0 = r(t)],
+                                                                                      xi = x,        dt(t) = r0.time - r0.pre_time -where [r0 = r(t)],
 
                                                                                                      v(t)  = r(t).value,  _ = xs[xi].tree(),
                                                                                                      t(t)  = r(t).time],
@@ -208,13 +244,19 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-          trace_grammar(options) = trace -where [grammar     = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
-                                                 index(t)    = t /~reach/ "options.index[_.id()] = _".qf,
-                                                 trace(tree) = grammar({_x: tree /!index /!mark_all_closures})]
+    # Empty nodes.
+#     Caterwaul has a questionable (non?)feature. If you parse something like 'if (x) {}', the { node will be nullary; that is, it will have no children at all. This causes patterns like 'if (x)
+#     {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
+#     could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
+
+          trace_grammar(options) = trace -where [grammar       = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
+                                                 index(t)      = t /~reach/ "options.index[_.id()] = _".qf,
+                                                 fill_empty(n) = n.data.length && '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
+                                                 trace(tree)   = {_x: tree /~rmap/ "_.reduce()".qf /~reach/ fill_empty /!index /-mark_all_closures/ options} /!grammar]
 
           -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
-          -where [tracing_rules() = options.trace ? unreachables + statements + lvalues + rvalues + hooks + closures -seq : ['S[_x]'.qs /-r/ '_x'.qs],
+          -where [tracing_rules() = unreachables + statements + lvalues + rvalues + hooks + closures -seq,
                   custom_rules()  = options.mocks /pairs *[x[0] /!$.parse /!anon /-r/ process_mock(x[1] /!process_mock)] -seq
                             -where [annotate           = options.allow_mock_annotations ? anon : "_".qf,
                                     process_mock(tree) = tree.constructor === Function ? tree : tree /!$.parse /!annotate],
@@ -340,7 +382,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
                   hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
                                     (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
 
-                  hooks         = ['H[_x]'.qs /-r/ "hook(_._x)".qf],
+                  hooks         = ['H[_x]'.qs /-r/ (options.trace ? "hook(_._x)".qf : '_x'.qs)],
 
       # Closure hooks.
 #       This is cool. The idea is to be able to inspect and modify the closure state of any function. This isn't very difficult, it turns out; we just need to insert some header code that is
@@ -370,37 +412,39 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # | 1. Builds up a backtrace for each error that occurs, provided that pre-tracing is enabled
 #     2. Records a timestamp for each pre-trace and trace entry
-#     3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size)
+#     3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size; set this to 0 to disable trimming)
 #     4. Maintains a sequential event counter and annotates each pre and post-trace record with a unique value
+#     5. Constructs a complete execution backtrace for every expression that is evaluated
 
   # Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null. If you do that, you will need to manually bind some other global closure hook and set
 #   options.hook_name to point to it.
 
-          hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                              enqueue(t)        = bt /~push/ $.merge(new record(t), {time: +new Date(), id: ++id}),
-                                              resolve(t, v)     = trace_log /~push/ $.merge(new record(t), {value: v, time: +new Date(), id: ++id, pre_trace: options.pre_trace && dequeue(t)})
-                                                                  -then- trim_trace_log() /when [trace_log.length > options.trace_log_size << 1]
-                                                                  -then- v,
+  # Backtraces are stored as a linked list of execution records. You can get this list from bottom to top using the backtrace() method. Backtrace records are not modified and are shared by
+#   execution records. This means that you can find common points of ancestry by using identity comparison on the backtrace. Note that all backtrace records are pre-traces, not traces. You can
+#   get the evaluated trace record using post_trace.
 
-                                              record_methods    = capture [tree()           = options.index[this.tree_id],
-                                                                           contains(moment) = !options.pre_trace || moment >= this.pre_trace.id && moment <= this.id],
+          hook_for(options) = observe -where [observe(t, v)      = arguments.length === 2 ? resolve(t, v) : enqueue(t),
+                                              enqueue(t)         = trace_log.push(bt = new record(t) /-$.merge/ {pre_time: +new Date(), pre_id: ++id, bt: bt}),
+                                              resolve(t, v)      = trace_record(t, v) -then- trim_trace_log() /when [options.trace_log_size && trace_log.length > options.trace_log_size << 1]
+                                                                                      -then- v,
 
-                                              record            = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
+                                              trace_record(t, v) = r /-$.merge/ {value: v, time: +new Date(), id: ++id} -then- trace_log /~push/ r /unless [options.pre_trace]
+                                                                   -where [r = options.pre_trace ? dequeue(t) : new record(t)],
 
-                                              dequeue(t)        = bt.length && bt[bt.length - 1].tree_id === t ? bt.pop() : dequeue_remote(t),
+                                              record_methods     = capture [tree()           = options.index[this.tree_id],
+                                                                            backtrace()      = this /~![x][x.bt] -seq,
+                                                                            contains(record) = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
 
-                                              // Look through the backtrace for the tree. This is O(n) in the backtrace size, which makes error recovery quite expensive. At some point in the
-                                              // future I'll probably fix this by folding the backtrace into a set of known keys and quickly rejecting failed searches. This would reduce the
-                                              // impact to just one O(n) lookup.
-                                              dequeue_remote(t) = error_log /~push/ error_trace -then- entry -where [index       = bt |~![x.tree_id === t][xi] |seq,
-                                                                                                                     entry       = bt[index],
-                                                                                                                     error_trace = bt.splice(index, bt.length - index)],
+                                              record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
 
-                                              trim_trace_log()  = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
-                                              id                = 0,
-                                              bt                = options.pre_trace && [],
-                                              trace_log         = options.trace_log,
-                                              error_log         = options.pre_trace && options.error_log -ocq- []],
+                                              dequeue(t)         = bt && bt.tree_id === t ? bt = bt.bt : dequeue_remote(t),
+                                              dequeue_remote(t)  = error_log /~push/ bt -then [bt = find_sync(bt)] -where [find_sync(bt) = bt.tree_id === t ? bt : find_sync(bt.bt)],
+
+                                              trim_trace_log()   = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
+                                              id                 = 0,
+                                              bt                 = null,
+                                              trace_log          = options.trace_log,
+                                              error_log          = options.pre_trace && options.error_log -ocq- []],
 
   # Closure annotation.
 #   We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
@@ -424,8 +468,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
     # Note that this code will break if the function's list of formals is nullary. It needs to be an actual 'empty' node rather than being no node at all.
 
-          mark_closure(f_node) = f_node -se [it[0][0] = '_xs; _metadata'.qs /~replace/ {_xs: it[0][0], _metadata: new $.metadata_node(f_node /!closure_scope, 'scope')}],
-          mark_all_closures(t) = t.collect("_.data === 'function'".qf) *!mark_closure -seq -then- t,
+          mark_closure(options)(f_node) = f_node -se [it[0][0] = new $.syntax(';', it[0][0] || $.empty, new $.metadata_node(f_node /!closure_scope -when- options.closures, 'scope'))],
+          mark_all_closures(t, options) = t.collect("_.data === 'function'".qf) *!mark -seq -then- t -where [mark = mark_closure(options)],
 
   # Eval tracing.
 #   Catastrophe traces calls to eval() and new Function() by default. These are known sites where code is generated at runtime, and catastrophe instruments that code before it is compiled. You
@@ -453,14 +497,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #   This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
 #   assume that the global hook has already been installed.
 
-    # Empty nodes.
-#     Caterwaul has a questionable (non?)feature. If you parse something like 'if (x) {}', the { node will be nullary; that is, it will have no children at all. This causes patterns like 'if (x)
-#     {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
-#     could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
-
-          fill_empty(n)     = n.data.length && '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
           compiler(options) = trace_and_compile -where [trace                             = trace_grammar(options),
-                                                        wrapped_trace                     = $("trace(_ /~reach/ fill_empty)".qf),
+                                                        wrapped_trace                     = $(trace),
                                                         trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
                                                                                                              {transparent_errors: false, gensym_renaming: false})]]});
 
