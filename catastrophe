@@ -645,6 +645,10 @@ unless ($$options{-J}) {
   file::write("src/$_.waul", retrieve("waul::$_"),           mkpath => 1) for @wauls;
   file::write("src/$_.md",   retrieve("markdown::waul::$_"), mkpath => 1) for @wauls;
 
+  my @js = grep s/^sdoc::js:://, sort keys %data;
+  file::write("src/$_.js", retrieve("js::$_"),           mkpath => 1) for @js;
+  file::write("src/$_.md", retrieve("markdown::js::$_"), mkpath => 1) for @js;
+
   terminal::info("waul-compiling $_.waul"), sh("waul src/$_.waul") for @wauls;
 
   my @deps = qw/caterwaul.min caterwaul.std.min/;
@@ -655,6 +659,7 @@ unless ($$options{-J}) {
 end
 
   file::write('build/catastrophe.js', $header . cat(map "deps/$_.js", @deps) . cat('src/catastrophe.js', 'src/catastrophe-deglobalize.js'));
+  file::write('build/catastrophe-node.js', cat('build/catastrophe.js', 'src/catastrophe-node.js'));
 
   minify_yui(qw|-m build/catastrophe.js|);
   file::write('build/catastrophe.min.js', $header . file::read('build/catastrophe.min.js'));
@@ -1005,7 +1010,7 @@ with_exported("waul::$name", sub {
 
 __
 meta::hook('before-shell::ad', <<'__');
-ad('waul::');
+ad('sdoc::');
 
 __
 meta::indicator('cc', 'length ::retrieve(\'data::current-continuation\') ? "\\033[1;36mcc\\033[0;0m" : \'\';');
@@ -1709,6 +1714,17 @@ meta::retriever('sdoc', 'exists $data{"sdoc::$_[0]"} ? sdoc("sdoc::$_[0]") : und
 meta::retriever('sdocp', <<'__');
 my $attribute = attribute($_[0]);
 exists $data{"sdoc::$attribute"} ? sdocp("sdoc::$attribute") : undef;
+__
+meta::sdoc('js::catastrophe-node', <<'__');
+Node.js module binding for catastrophe | Spencer Tipping
+Licensed under the terms of the MIT source code license
+
+Introduction.
+This just binds the catastrophe global to the module. If you're using catastrophe from inside node.js, you'll need to make sure to set the global object appropriately (see the source code
+documentation for details about this).
+
+exports.catastrophe = catastrophe;
+
 __
 meta::sdoc('readme', <<'__');
 Catastrophe tracing debugger.
