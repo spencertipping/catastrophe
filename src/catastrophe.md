@@ -388,7 +388,8 @@ Catastrophe's default hook function does several things that may be useful:
     3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size)
     4. Maintains a sequential event counter and annotates each pre and post-trace record with a unique value
 
-Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null.
+Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null. If you do that, you will need to manually bind some other global closure hook and set
+options.hook_name to point to it.
 
             hook_for(options) = observe -where [observe(t, v)     = arguments.length === 2 ? resolve(t, v) : enqueue(t),
                                                 enqueue(t)        = bt /~push/ $.merge(new record(t), {time: +new Date(), id: ++id}),
@@ -421,15 +422,17 @@ Normally the hook is bound as a global variable, but you can disable this by set
 We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
 set differences to figure out which variables are actually closure variables as opposed to locals.
 
-            scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless- _.data === 'function'".qf,
+            scope_closed_reach(f, t) = f(t) -se- console.log(t.toString()) -then- t /~each/ "scope_closed_reach(f, _) -unless- _.data === 'function'".qf,
 
-            immediate_scope(t)       = scope_closed_reach(visit, t) -then- scope -where [visit(n)       = scope[n.data] -eq- true -when- n.is_identifier(), scope = {}],
+            immediate_scope(t)       = scope_closed_reach(visit, t) -then- scope -where [visit(n) = scope[n.data] -eq- true -when- n.is_identifier(),
+                                                                                         scope    = {}],
+
             local_scope(t)           = scope_closed_reach(visit, t) -then- scope -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
                                                                                          visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = true : normal(vs)],
-                                                                                         normal(vs)     = +vs *![scope[x.flatten('=')[0].data] = true] -seq,
+                                                                                         normal(vs)     = vs *![scope[x.flatten('=')[0].data] = true] -seq,
                                                                                          scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, true]] /object -seq],
 
-            closure_scope(t)         = local_scope(t) %k%![immediate /-Object.prototype.hasOwnProperty.call/ x] -seq -where [immediate = immediate_scope(t)],
+            closure_scope(t)         = immediate_scope(t) %k%![local /-Object.prototype.hasOwnProperty.call/ x] -seq -where [local = local_scope(t)],
 
 ### Scope marking
 
