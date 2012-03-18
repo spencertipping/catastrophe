@@ -57,6 +57,11 @@ time during the transformation step, you can choose to annotate only those subex
       }
     })();
 
+### Closure inspection and manipulation
+
+By default catastrophe allows you to inspect and manipulate the state of closure variables. Doing this involves changing the function's code in a way that is unlikely to change its
+behavior within the context of the original progrma, but you can disable this feature by setting 'closures' to false.
+
 ### Compilation environment
 
 Any function you trace will lose its closure bindings. Normally this isn't a problem because you'd generally want to trace global functions. But you can reconstruct any bindings that are
@@ -99,7 +104,8 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
           tracer_for(options) = trace -where [default_options = {mocks: {},           allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},
                                                              hook_name: 'catastrophe_hook' /!$.gensym,  hook: null,                   global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                          trace: true,                pre_trace: true,             index: {}},
+                                                              patterns: null,                          trace: true,                pre_trace: true,             index: {},
+                                                              closures: true},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
@@ -346,9 +352,11 @@ Here is the information provided to the hook function:
 It is important that the hook function return the value it is tracing. Otherwise the program's semantics will be changed! The pre-hook's return value is also important. If it returns a
 falsy value, the expression will not be evaluated. You can use this to skip forms.
 
+Note that you can specify new hook forms in the options. This is generally useful if you're writing your own hook function; the default hook functions best with the default forms.
+
                 hook_ref      = new $.syntax(options.hook_name),
-                pre_hook_form = 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
-                hook_form     = 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                pre_hook_form = options.pre_hook_form || 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
+                hook_form     = options.hook_form     || 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
                 hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
                                   (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
@@ -377,7 +385,7 @@ The function's closure scope is simply its set of identifiers minus the ones tha
                 closure_state_setter(vs) = new $.syntax(',', vs /keys *closure_setter_case -seq).unflatten() -re [it.length ? it : $.empty],
 
                 closure_hook(vs)         = closure_pattern /~replace/ {_hook: options.hook_name, _get: closure_state_object(vs), _set: closure_state_setter(vs)},
-                closures                 = ['C[_scope]'.qs /-r/ "closure_hook(_._scope.metadata)".qf]]],
+                closures                 = ['C[_scope]'.qs /-r/ (options.closures ? "closure_hook(_._scope.metadata)".qf : 'null'.qs)]]],
 
 ## Hook function
 
@@ -422,7 +430,7 @@ options.hook_name to point to it.
 We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
 set differences to figure out which variables are actually closure variables as opposed to locals.
 
-            scope_closed_reach(f, t) = f(t) -se- console.log(t.toString()) -then- t /~each/ "scope_closed_reach(f, _) -unless- _.data === 'function'".qf,
+            scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless [_.data === 'function']".qf,
 
             immediate_scope(t)       = scope_closed_reach(visit, t) -then- scope -where [visit(n) = scope[n.data] -eq- true -when- n.is_identifier(),
                                                                                          scope    = {}],
