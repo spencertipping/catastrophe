@@ -1904,22 +1904,20 @@ requires no annotation within the source to activate substitution. Fortunately, 
                                               eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(settings.hook_name) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
-                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], error_log: [],
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [],
                                                                                            patterns: settings.patterns && settings.patterns *$.parse -seq})
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
+                                                                                     unresolved()            = this.find('_'),
                                                                                      find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree() && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t),
-
-                                                                                     errors()                = error_log *[collection(x, '_x')] -seq,
 
                                                                                      trace_module(c, module) = replace_module(this, c, module),
                                                                                      is_traced(f)            = f.toString() /~indexOf/ $.gensym_entropy() > -1,
 
                                                                                      closure_state(f, state) = state ? f.call(options.hook, state) : f.call(options.hook),
                                                                                      trace_log               = options.trace_log,
-                                                                                     error_log               = options.error_log,
                                                                                      hook                    = options.hook -ocq- hook_for(options),
                                                                                      trace_eval              = options.global && hook.trace_eval -ocq- eval_tracer_for(self),
                                                                                      install_hook()          = options.global && (options.global[options.hook_name] = hook),
@@ -1959,9 +1957,8 @@ requires no annotation within the source to activate substitution. Fortunately, 
       _     the current syntax tree
       _x    match variables; one for each wildcard in the syntax pattern
       v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
-      r()   returns the trace record for a given syntax tree
+      r()   returns the trace record for a given syntax tree (see the section about this for useful methods they provide)
       t()   returns the timestamp of the trace record for a given syntax tree
-      dt()  when pre-tracing is enabled, returns the total amount of time that elapsed while evaluating the given syntax tree
 
     So, for example, here are some basic queries:
 
@@ -1973,19 +1970,19 @@ requires no annotation within the source to activate substitution. Fortunately, 
 
                                                   select(xs)              = collection(xs, this.xs, this.pattern),
                                                   iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                            wcapture [xs = this.xs,  r(t)  = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
-                                                                                      xi = x,        dt(t) = r0.time - r0.pre_time -where [r0 = r(t)],
-
-                                                                                                     v(t)  = r(t).value,  _ = xs[xi].tree(),
-                                                                                                     t(t)  = r(t).time],
+                                                                            wcapture [xs = this.xs,        r(t) = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
+                                                                                      xi = x,              v(t) = r(t).value,
+                                                                                      _  = xs[xi].tree(),  t(t) = r(t).time],
 
                                                   map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
                                                   filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
 
+                                                  unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
+
                                                   to_a()                  = this *[this.xs[x]] -seq,
 
                                                   first(n)                = this.select(this.slice(0, n || 1)),
-                                                  last(n)                 = this.select(this.slice(this.length - 1 - (n || 1))),
+                                                  last(n)                 = this.select(this.slice(this.length - (n || 1))),
 
                                                   next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
                                                   prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
@@ -2193,27 +2190,44 @@ requires no annotation within the source to activate substitution. Fortunately, 
   get the evaluated trace record using post_trace.
 
           hook_for(options) = observe -where [observe(t, v)      = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                              enqueue(t)         = trace_log.push(bt = new record(t) /-$.merge/ {pre_time: +new Date(), pre_id: ++id, bt: bt}),
+                                              enqueue(t)         = trace_log.push(bt = pre_record(t)),
+
                                               resolve(t, v)      = trace_record(t, v) -then- trim_trace_log() /when [options.trace_log_size && trace_log.length > options.trace_log_size << 1]
                                                                                       -then- v,
 
-                                              trace_record(t, v) = r /-$.merge/ {value: v, time: +new Date(), id: ++id} -then- trace_log /~push/ r /unless [options.pre_trace]
+                                              trim_trace_log()   = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
+
+                                              dequeue(t)         = bt -se [bt = bt /~find_sync/ t],
+
+                                              pre_record(t)      = new record(t) /-$.merge/ {pre_time: +new Date(), pre_id: ++id, bt: bt, resolved: false},
+                                              trace_record(t, v) = r /-$.merge/ {value: v, time: +new Date(), id: ++id, resolved: true} -then- trace_log /~push/ r /unless [options.pre_trace]
                                                                    -where [r = options.pre_trace ? dequeue(t) : new record(t)],
 
-                                              record_methods     = capture [tree()           = options.index[this.tree_id],
-                                                                            backtrace()      = this /~![x][x.bt] -seq,
-                                                                            contains(record) = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
+    Evaluation record objects.
+    The default hook defines a class for execution records that includes a few useful fields and methods. They are:
+
+    | tree()            the syntax tree corresponding to the expression that was evaluated
+      backtrace()       an array of execution records blocking on this one
+      dt()              the amount of time between the beginning and end of the expression's evaluation
+      contains(record)  returns true if the evaluation of this record blocks on the evaluation of another one
+      last_resolution() the most recent non-error point in the backtrace, or null if the error propagated beyond the tracing boundary
+      resolved          true if the record was evaluated successfully
+      value             the value produced by the expression, assuming that it was resolved successfully (undefined otherwise)
+
+    Other methods are also defined, but they are probably useful only internally.
+
+                                              record_methods     = capture [tree()            = options.index[this.tree_id],
+                                                                            backtrace()       = this /~![x][x.bt] -seq,
+                                                                            last_resolution() = this.resolved || !this.bt ? this : this.bt.last_resolution(),
+                                                                            find_sync(t)      = this.tree_id === t ? this : this.bt.find_sync(t),
+                                                                            dt()              = this.time - this.pre_time,
+                                                                            contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
 
                                               record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
 
-                                              dequeue(t)         = bt && bt.tree_id === t ? bt = bt.bt : dequeue_remote(t),
-                                              dequeue_remote(t)  = error_log /~push/ bt -then [bt = find_sync(bt)] -where [find_sync(bt) = bt.tree_id === t ? bt : find_sync(bt.bt)],
-
-                                              trim_trace_log()   = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
                                               id                 = 0,
                                               bt                 = null,
-                                              trace_log          = options.trace_log,
-                                              error_log          = options.pre_trace && options.error_log -ocq- []],
+                                              trace_log          = options.trace_log],
 
   Closure annotation.
   We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
