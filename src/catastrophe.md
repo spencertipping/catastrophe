@@ -22,13 +22,6 @@ Note that catastrophe contains its own copy of caterwaul; it hides its copy to p
 Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what you're
 looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
 
-## Making trees presentable
-
-By default, all of the trees referenced by log entries will have tons of intermediate markers in them. This function gets rid of that but returns a new tree with the same ID as the original.
-This deliberate ID collision allows you to use the ID as an equivalence marker.
-
-            remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [t.id(), it.id = t.id],
-
 ## Pattern selection
 
 The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
@@ -40,7 +33,7 @@ bound in the selectors you use later on.
                                                     promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
                                                     compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
 
-                                                    match_variables_for(pattern) = ('_ x xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
+                                                    match_variables_for(pattern) = ('_ x xs xi r v t'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
 
 ## Selector methods
 
@@ -62,7 +55,7 @@ So, for example, here are some basic queries:
     tracer.find('f(_x)').filter('v(_) === 0').map('_x.toString()')
     tracer.find('f(_x)').map('"f(#{_x} = #{v(_x)}): #{v(_)}"')
 
-This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
+The last query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
                                                     select(xs)              = collection(xs, this.xs, this.pattern),
                                                     iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
@@ -73,9 +66,11 @@ This query shows you each input to f() followed by the corresponding output. You
                                                     map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
                                                     filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
 
+                                                    resolved()              = this.select(this % [this.xs[x].resolved] -seq),
                                                     unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
 
                                                     to_a()                  = this *[this.xs[x]] -seq,
+                                                    toString(depth)         = this.to_a() *['[#{x.tree().toString(depth || 5)}]'] -seq -re- it.join(', '),
 
                                                     first(n)                = this.select(this.slice(0, n || 1)),
                                                     last(n)                 = this.select(this.slice(this.length - (n || 1))),
@@ -458,14 +453,15 @@ falsy value, the expression will not be evaluated. You can use this to skip form
 
 Note that you can specify new hook forms in the options. This is generally useful if you're writing your own hook function; the default hook functions best with the default forms.
 
-                hook_ref      = new $.syntax(options.hook_name),
-                pre_hook_form = options.pre_hook_form /!$.parse || 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
-                hook_form     = options.hook_form     /!$.parse || 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                hook_ref               = new $.syntax(options.hook_name),
+                pre_hook_form          = options.pre_hook_form /!$.parse /or ['hook(_tree, hook(_tree) && (_value))'.qs] /~replace/ {hook: hook_ref},
+                hook_form              = options.hook_form     /!$.parse /or ['hook(_tree, (_value))'.qs]                /~replace/ {hook: hook_ref},
 
-                hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
-                                  (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
+                remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t) /~map/ remove_markers_from,
+                hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
+                                           (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_tree: $.syntax.from_string(t.id()), _value: t},
 
-                hooks         = ['H[_x]'.qs /-r/ (options.trace ? "hook(_._x)".qf : '_x'.qs)],
+                hooks                  = ['H[_x]'.qs /-r/ (options.trace ? "hook(_._x)".qf : '_x'.qs)],
 
 #### Closure hooks
 
