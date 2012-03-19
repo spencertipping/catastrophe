@@ -12,7 +12,9 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   (catastrophe = tracer_for) /-$.merge/ statics
   -where [global  = $.context,
-          statics = capture [caterwaul = $],
+          statics = capture [caterwaul = $,  local_scope     = local_scope,
+                                             immediate_scope = immediate_scope,
+                                             closure_scope   = closure_scope],
 
 # Querying support.
 # Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what you're
@@ -300,22 +302,15 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # The terminal markers don't generate any others; they are rewritten into the final hook forms.
 
-    # Empty nodes.
-#     Caterwaul has a questionable (non?)feature. If you parse something like 'if (x) {}', the { node will be nullary; that is, it will have no children at all. This causes patterns like 'if (x)
-#     {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
-#     could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes.
-
     # Tree reduction.
 #     This is a caterwaul-specific concern. In order to avoid unnecessary parsing overhead, caterwaul delays the parse step by creating opaque refs when reconstructing functions with expression
 #     ref tables. These opaque refs don't contain node-level structure; they just contain a closure binding table and a chunk of code as a string. The reduce() method forces the parse by
 #     returning the fully parsed tree.
 
-          trace_grammar(options) = trace -where [grammar       = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
-                                                 index(t)      = t /~reach/ "options.index[_.id()] = _".qf,
-                                                 fill_empty(n) = !n.length && n.data.length && '([{'.indexOf(n.data) > -1 && n /~push/ $.empty,
-
-                                                 reduce(tree)  = tree /~rmap/ "_.reduce() -re [it !== _ ? reduce(it) : _]".qf,
-                                                 trace(tree)   = {_x: tree /!reduce /~reach/ fill_empty /!index /-mark_all_closures/ options} /!grammar]
+          trace_grammar(options) = trace -where [grammar      = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
+                                                 index(t)     = t /~reach/ "options.index[_.id()] = _".qf,
+                                                 reduce(tree) = tree /~rmap/ "_.reduce() -re [it !== _ ? reduce(it) : _]".qf,
+                                                 trace(tree)  = {_x: tree /!reduce /!index /-mark_all_closures/ options} /!grammar]
 
           -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
@@ -439,8 +434,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
       # Note that you can specify new hook forms in the options. This is generally useful if you're writing your own hook function; the default hook functions best with the default forms.
 
                   hook_ref      = new $.syntax(options.hook_name),
-                  pre_hook_form = options.pre_hook_form || 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
-                  hook_form     = options.hook_form     || 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
+                  pre_hook_form = options.pre_hook_form /!$.parse || 'h(_x, h(_x) && (_value))'.qs /~replace/ {h: hook_ref},
+                  hook_form     = options.hook_form     /!$.parse || 'h(_x, (_value))'.qs          /~replace/ {h: hook_ref},
 
                   hook(t)       = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
                                     (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_x: $.syntax.from_string(t.id()), _value: t},
@@ -476,13 +471,15 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
           scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless [_.data === 'function']".qf,
 
-          immediate_scope(t)       = scope_closed_reach(visit, t) -then- scope -where [visit(n) = scope[n.data] -eq- true -when- n.is_identifier(),
-                                                                                       scope    = {}],
+          immediate_scope(t)       = scope_closed_reach(visit, t /!$.parse) -then- scope
+                                                                            -where [visit(n) = scope[n.data] -eq- n -when- n.is_identifier(),
+                                                                                    scope    = {}],
 
-          local_scope(t)           = scope_closed_reach(visit, t) -then- scope -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
-                                                                                       visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = true : normal(vs)],
-                                                                                       normal(vs)     = vs *![scope[x.flatten('=')[0].data] = true] -seq,
-                                                                                       scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, true]] /object -seq],
+          local_scope(t)           = scope_closed_reach(visit, t /!$.parse) -then- scope
+                                                                            -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
+                                                                                    visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = it : normal(vs)],
+                                                                                    normal(vs)     = vs *![scope[x.flatten('=')[0].data] = x] -seq,
+                                                                                    scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, x]] /object -seq],
 
           closure_scope(t)         = immediate_scope(t) %k%![local /-Object.prototype.hasOwnProperty.call/ x] -seq -where [local = local_scope(t)],
 
