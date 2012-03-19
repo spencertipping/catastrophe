@@ -15,6 +15,138 @@ Note that catastrophe contains its own copy of caterwaul; it hides its copy to p
       -where [global  = $.context,
               statics = capture [caterwaul = $],
 
+# Querying support
+
+Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what you're
+looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
+
+## Making trees presentable
+
+By default, all of the trees referenced by log entries will have tons of intermediate markers in them. This function gets rid of that but returns a new tree with the same ID as the original.
+This deliberate ID collision allows you to use the ID as an equivalence marker.
+
+            remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [t.id(), it.id = t.id],
+
+## Pattern selection
+
+The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
+tree syntax, so any identifiers that begin with an underscore are match variables and will become available later on. The pattern you select initially will determine which variables are
+bound in the selectors you use later on.
+
+            collection(xis, xs, pattern) = xis / {xs: xs, pattern: pattern} /-$.merge/ collection_methods,
+            collection_methods           = capture [function_compiler            = $(':all'),
+                                                    promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
+                                                    compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
+
+                                                    match_variables_for(pattern) = ('_ x xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
+
+## Selector methods
+
+These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
+function's body. This string is compiled against several closure variables:
+
+    x     the current event record
+    xi    the index of the current event record in the log (this is invariant across filter operations)
+    xs    the log
+    _     the current syntax tree
+    _x    match variables; one for each wildcard in the syntax pattern
+    v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
+    r()   returns the trace record for a given syntax tree (see the section about this for useful methods they provide)
+    t()   returns the timestamp of the trace record for a given syntax tree
+
+So, for example, here are some basic queries:
+
+    tracer.find('f(_x)').map('_x + " : " + v(_)')
+    tracer.find('f(_x)').filter('v(_) === 0').map('_x.toString()')
+    tracer.find('f(_x)').map('"f(#{_x} = #{v(_x)}): #{v(_)}"')
+
+This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
+
+                                                    select(xs)              = collection(xs, this.xs, this.pattern),
+                                                    iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
+                                                                              wcapture [xs = this.xs,        r(t) = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
+                                                                                        xi = x,              v(t) = r(t).value,
+                                                                                        _  = xs[xi].tree(),  t(t) = r(t).time],
+
+                                                    map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
+                                                    filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
+
+                                                    unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
+
+                                                    to_a()                  = this *[this.xs[x]] -seq,
+
+                                                    first(n)                = this.select(this.slice(0, n || 1)),
+                                                    last(n)                 = this.select(this.slice(this.length - (n || 1))),
+
+                                                    next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                    prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+
+                                                    interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
+
+                                                    step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
+                                                    adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
+                                                    to(t)                   = this /~interval/ this.next(t),
+                                                    from(t)                 = this.prev(t) /~interval/ this],
+
+# Hook function
+
+Catastrophe instruments code by generating calls to a hook function that observes the value and execution order of each expression. The default hook form also allows you to determine which
+expressions should be executed, and to modify their return values. Its default hook function does several things that may be useful:
+
+    1. Builds up a backtrace for each error that occurs, provided that pre-tracing is enabled
+    2. Records a timestamp for each pre-trace and trace entry
+    3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size; set this to 0 to disable trimming)
+    4. Maintains a sequential event counter and annotates each pre and post-trace record with a unique value
+    5. Constructs a complete execution backtrace for every expression that is evaluated
+
+Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null. If you do that, you will need to manually bind some other global closure hook and set
+options.hook_name to point to it.
+
+Backtraces are stored as a linked list of execution records. You can get this list from bottom to top using the backtrace() method. Backtrace records are not modified and are shared by
+execution records. This means that you can find common points of ancestry by using identity comparison on the backtrace. Note that all backtrace records are pre-traces, not traces. You can get
+the evaluated trace record using post_trace.
+
+              hook_for(options) = observe -where [observe(t, v)      = arguments.length === 2 ? resolve(t, v) : enqueue(t),
+                                                  enqueue(t)         = trace_log.push(bt = pre_record(t)),
+
+                                                  resolve(t, v)      = trace_record(t, v) -then- trim_trace_log() /when [options.trace_log_size && trace_log.length > options.trace_log_size << 1]
+                                                                                          -then- v,
+
+                                                  trim_trace_log()   = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
+
+                                                  dequeue(t)         = bt -se [bt = bt /~find_sync/ t],
+
+                                                  pre_record(t)      = new record(t) /-$.merge/ {pre_time: +new Date(), pre_id: ++id, bt: bt, resolved: false},
+                                                  trace_record(t, v) = r /-$.merge/ {value: v, time: +new Date(), id: ++id, resolved: true} -then- trace_log /~push/ r /unless [options.pre_trace]
+                                                                       -where [r = options.pre_trace ? dequeue(t) : new record(t)],
+
+## Evaluation record objects
+
+The default hook defines a class for execution records that includes a few useful fields and methods. They are:
+
+    tree()            the syntax tree corresponding to the expression that was evaluated
+    backtrace()       an array of execution records blocking on this one
+    dt()              the amount of time between the beginning and end of the expression's evaluation
+    contains(record)  returns true if the evaluation of this record blocks on the evaluation of another one
+    last_resolution() the most recent non-error point in the backtrace, or null if the error propagated beyond the tracing boundary
+    resolved          true if the record was evaluated successfully
+    value             the value produced by the expression, assuming that it was resolved successfully (undefined otherwise)
+
+Other methods are also defined, but they are probably useful only internally.
+
+                                                record_methods     = capture [tree()            = options.index[this.tree_id],
+                                                                              backtrace()       = this /~![x][x.bt] -seq,
+                                                                              last_resolution() = this.resolved || !this.bt ? this : this.bt.last_resolution(),
+                                                                              find_sync(t)      = this.tree_id === t ? this : this.bt.find_sync(t),
+                                                                              dt()              = this.time - this.pre_time,
+                                                                              contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
+
+                                                record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
+
+                                                id                 = 0,
+                                                bt                 = null,
+                                                trace_log          = options.trace_log],
+
 # Trace implementation
 
 The tracer is implemented as a syntax tree grammar. However, rather than being used as a modifier (e.g. the -seq macro), this grammar is used to transform unannotated contents. That is, it
@@ -138,14 +270,16 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
           tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},  closures: true,
                                                              hook_name: 'hook' /!$.gensym,     hook: null,                   global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                 trace: true,                pre_trace: true,             index: {}},
+                                                              patterns: null,                 trace: true,                pre_trace: true,
+
+                                                             hook_form: null,         pre_hook_form: null},
 
                                               settings        = {} / default_options /-$.merge/ options,
                                               self()          = trace.apply(this, arguments),
                                               eval_mocks      = settings.trace_native_eval_forms ? eval_mocks_for(settings.hook_name) : {},
                                               all_mocks       = eval_mocks /-$.merge/ settings.mocks,
 
-                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [],
+                                              trace           = compiler(settings /-$.merge/ {mocks: all_mocks, trace_log: [], index: {},
                                                                                            patterns: settings.patterns && settings.patterns *$.parse -seq})
 
                                                                 /-$.merge/ wcapture [options                 = settings,
@@ -165,79 +299,6 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
                                                                                      remove_hook()           = options.global && delete options.global[options.hook_name]]
 
                                                                 -se- it.install_hook()],
-
-## Querying support
-
-Querying is designed to be easy to use from a non-caterwaul console. As such, collections returned from queries have a bunch of iteration methods that you can use to quickly select what
-you're looking for. These methods will eval() strings into functions so that you don't have to type as much boilerplate.
-
-### Making trees presentable
-
-  By default, all of the trees referenced by log entries will have tons of intermediate markers in them. This function gets rid of that but returns a new tree with the same ID as the
-  original. This deliberate ID collision allows you to use the ID as an equivalence marker.
-
-          remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t).map(remove_markers_from) /se [t.id(), it.id = t.id],
-
-### Pattern selection
-
-The first thing you do to a trace log is specify a syntax pattern. This should be something you're interested to know about; for example, 'document.getElementById(_x)'. This uses caterwaul
-tree syntax, so any identifiers that begin with an underscore are match variables and will become available later on. The pattern you select initially will determine which variables are
-bound in the selectors you use later on.
-
-          collection(xis, xs, pattern) = xis / {xs: xs, pattern: pattern} /-$.merge/ collection_methods,
-          collection_methods           = capture [function_compiler            = $(':all'),
-                                                  promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
-                                                  compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
-
-                                                  match_variables_for(pattern) = ('_ x xs xi r v t dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
-
-### Selector methods
-
-These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
-function's body. This string is compiled against several closure variables:
-
-    x     the current event record
-    xi    the index of the current event record in the log (this is invariant across filter operations)
-    xs    the log
-    _     the current syntax tree
-    _x    match variables; one for each wildcard in the syntax pattern
-    v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
-    r()   returns the trace record for a given syntax tree (see the section about this for useful methods they provide)
-    t()   returns the timestamp of the trace record for a given syntax tree
-
-So, for example, here are some basic queries:
-
-    tracer.find('f(_x)').map('_x + " : " + v(_)')
-    tracer.find('f(_x)').filter('v(_) === 0').map('_x.toString()')
-    tracer.find('f(_x)').map('"f(#{_x} = #{v(_x)}): #{v(_)}"')
-
-This query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
-
-                                                  select(xs)              = collection(xs, this.xs, this.pattern),
-                                                  iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                            wcapture [xs = this.xs,        r(t) = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
-                                                                                      xi = x,              v(t) = r(t).value,
-                                                                                      _  = xs[xi].tree(),  t(t) = r(t).time],
-
-                                                  map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
-                                                  filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
-
-                                                  unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
-
-                                                  to_a()                  = this *[this.xs[x]] -seq,
-
-                                                  first(n)                = this.select(this.slice(0, n || 1)),
-                                                  last(n)                 = this.select(this.slice(this.length - (n || 1))),
-
-                                                  next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
-                                                  prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
-
-                                                  interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
-
-                                                  step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
-                                                  adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
-                                                  to(t)                   = this /~interval/ this.next(t),
-                                                  from(t)                 = this.prev(t) /~interval/ this],
 
 ## Trace grammar implementation
 
@@ -260,12 +321,20 @@ The terminal markers don't generate any others; they are rewritten into the fina
 
   Caterwaul has a questionable (non?)feature. If you parse something like 'if (x) {}', the { node will be nullary; that is, it will have no children at all. This causes patterns like 'if (x)
   {_body}' to fail to match, since _body is a child. I'm undecided about whether this is a good thing; I can definitely see the merit of doing it each way. In any case, for now caterwaul
-  could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes:
+  could give us empty nodes, but for this application it's easier to just deal with nodes that contain an empty child. So we go through the tree up-front and fill out any empty nodes.
+
+### Tree reduction
+
+This is a caterwaul-specific concern. In order to avoid unnecessary parsing overhead, caterwaul delays the parse step by creating opaque refs when reconstructing functions with expression
+ref tables. These opaque refs don't contain node-level structure; they just contain a closure binding table and a chunk of code as a string. The reduce() method forces the parse by
+returning the fully parsed tree.
 
           trace_grammar(options) = trace -where [grammar       = $.grammar('L U R C H S'.qw, {initial: 'S[_x]', fix: false}, cc),
                                                  index(t)      = t /~reach/ "options.index[_.id()] = _".qf,
-                                                 fill_empty(n) = n.data.length && '([{'.indexOf(n.data) > -1 && !n.length && n /~push/ $.empty,
-                                                 trace(tree)   = {_x: tree /~rmap/ "_.reduce()".qf /~reach/ fill_empty /!index /-mark_all_closures/ options} /!grammar]
+                                                 fill_empty(n) = !n.length && n.data.length && '([{'.indexOf(n.data) > -1 && n /~push/ $.empty,
+
+                                                 reduce(tree)  = tree /~rmap/ "_.reduce() -re [it !== _ ? reduce(it) : _]".qf,
+                                                 trace(tree)   = {_x: tree /!reduce /~reach/ fill_empty /!index /-mark_all_closures/ options} /!grammar]
 
           -where [cc(rule, anon) = tracing_rules() + custom_rules() -seq
 
@@ -428,64 +497,6 @@ The function's closure scope is simply its set of identifiers minus the ones tha
                 closure_hook(vs)         = closure_pattern /~replace/ {_hook: options.hook_name, _get: closure_state_object(vs), _set: closure_state_setter(vs)},
                 closures                 = ['C[_scope]'.qs /-r/ (options.closures ? "closure_hook(_._scope.metadata)".qf : 'null'.qs)]]],
 
-## Hook function
-
-Catastrophe's default hook function does several things that may be useful:
-
-    1. Builds up a backtrace for each error that occurs, provided that pre-tracing is enabled
-    2. Records a timestamp for each pre-trace and trace entry
-    3. Prevents unbounded trace log growth by purging old entries (adjustable using trace_log_size; set this to 0 to disable trimming)
-    4. Maintains a sequential event counter and annotates each pre and post-trace record with a unique value
-    5. Constructs a complete execution backtrace for every expression that is evaluated
-
-Normally the hook is bound as a global variable, but you can disable this by setting 'global' to null. If you do that, you will need to manually bind some other global closure hook and set
-options.hook_name to point to it.
-
-Backtraces are stored as a linked list of execution records. You can get this list from bottom to top using the backtrace() method. Backtrace records are not modified and are shared by
-execution records. This means that you can find common points of ancestry by using identity comparison on the backtrace. Note that all backtrace records are pre-traces, not traces. You can
-get the evaluated trace record using post_trace.
-
-            hook_for(options) = observe -where [observe(t, v)      = arguments.length === 2 ? resolve(t, v) : enqueue(t),
-                                                enqueue(t)         = trace_log.push(bt = pre_record(t)),
-
-                                                resolve(t, v)      = trace_record(t, v) -then- trim_trace_log() /when [options.trace_log_size && trace_log.length > options.trace_log_size << 1]
-                                                                                        -then- v,
-
-                                                trim_trace_log()   = trace_log.splice(trace_log.length - options.trace_log_size, options.trace_log_size),
-
-                                                dequeue(t)         = bt -se [bt = bt /~find_sync/ t],
-
-                                                pre_record(t)      = new record(t) /-$.merge/ {pre_time: +new Date(), pre_id: ++id, bt: bt, resolved: false},
-                                                trace_record(t, v) = r /-$.merge/ {value: v, time: +new Date(), id: ++id, resolved: true} -then- trace_log /~push/ r /unless [options.pre_trace]
-                                                                     -where [r = options.pre_trace ? dequeue(t) : new record(t)],
-
-### Evaluation record objects
-
-  The default hook defines a class for execution records that includes a few useful fields and methods. They are:
-
-    tree()            the syntax tree corresponding to the expression that was evaluated
-    backtrace()       an array of execution records blocking on this one
-    dt()              the amount of time between the beginning and end of the expression's evaluation
-    contains(record)  returns true if the evaluation of this record blocks on the evaluation of another one
-    last_resolution() the most recent non-error point in the backtrace, or null if the error propagated beyond the tracing boundary
-    resolved          true if the record was evaluated successfully
-    value             the value produced by the expression, assuming that it was resolved successfully (undefined otherwise)
-
-Other methods are also defined, but they are probably useful only internally.
-
-                                              record_methods     = capture [tree()            = options.index[this.tree_id],
-                                                                            backtrace()       = this /~![x][x.bt] -seq,
-                                                                            last_resolution() = this.resolved || !this.bt ? this : this.bt.last_resolution(),
-                                                                            find_sync(t)      = this.tree_id === t ? this : this.bt.find_sync(t),
-                                                                            dt()              = this.time - this.pre_time,
-                                                                            contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
-
-                                              record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
-
-                                              id                 = 0,
-                                              bt                 = null,
-                                              trace_log          = options.trace_log],
-
 ## Closure annotation
 
 We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
@@ -530,6 +541,9 @@ via that alias. So, for example, this code will generate an untraced function:
 Theoretically, this gap could be closed by alias-checking each constructor invocation and function call. However, I'm not really up for implementing that at the moment, and aliasing these
 things is so uncommon that I doubt it's an issue.
 
+Note that if you're writing eval mocks, you can reuse the logic here by just referring to <hook_name>.trace_eval. This function is analogous to a trace function but operates on strings
+instead of functions.
+
             eval_tracer_for(self)     = "self(_ /!$.parse).toString()".qf,
             eval_mocks_for(hook_name) = {'R[eval(_x)]':              'H[eval(trace(R[_x]))]'.qs,
                                          'R[new Function(_x)]':      'H[new Function(trace(R[_x]))]'.qs,
@@ -541,7 +555,8 @@ things is so uncommon that I doubt it's an issue.
 This is actually quite straightforward. All of the work has already been done in the grammar; we just need to invoke the caterwaul compiler on the traced tree and the environment. We can
 assume that the global hook has already been installed.
 
-            compiler(options) = trace_and_compile -where [trace                             = trace_grammar(options),
-                                                          wrapped_trace                     = $(trace),
-                                                          trace_and_compile(f, environment) = wrapped_trace(f, {} / options.environment /-$.merge/ environment,
-                                                                                                               {transparent_errors: false, gensym_renaming: false})]]});
+            compiler(options) = trace_and_compile -where [trace                   = trace_grammar(options),
+                                                          wrapped_trace           = $(trace),
+                                                          trace_and_compile(f, e) = f.constructor === String ? this.find.apply(this, arguments)
+                                                                                                             : wrapped_trace(f, {} / options.environment /-$.merge/ e,
+                                                                                                                                {transparent_errors: false, gensym_renaming: false})]]});
