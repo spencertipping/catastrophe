@@ -1,1 +1,1 @@
-caterwaul.module( 'catastrophe.deglobalization' ,function($) {$.deglobalize() } ) ;
+ caterwaul.module( 'catastrophe.deglobalization' , function ($) { $.deglobalize()}) ;

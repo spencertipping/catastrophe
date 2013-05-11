@@ -12,10 +12,11 @@ Note that catastrophe contains its own copy of caterwaul; it hides its copy to p
     caterwaul.module('catastrophe', ':all', function ($) {
 
       (catastrophe = tracer_for) /-$.merge/ statics
-      -where [global  = $.context,
-              statics = capture [caterwaul = $,  local_scope     = local_scope,
+      -where [statics = capture [caterwaul = $,  local_scope     = local_scope,
                                                  immediate_scope = immediate_scope,
-                                                 closure_scope   = closure_scope],
+                                                 closure_scope   = closure_scope]]
+
+      -where [global  = $.context,
 
 # Querying support
 
