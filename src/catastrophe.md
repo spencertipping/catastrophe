@@ -82,6 +82,8 @@ The last query shows you each input to f() followed by the corresponding output.
                                                     interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
 
                                                     step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
+                                                    forward(n)              = this.select(this *~![ni[x, x + n] %[this.xs[x]] -seq] -seq),
+                                                    backward(n)             = this.select(this *~![ni[x - n, x] %[this.xs[x]] -seq] -seq),
                                                     adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
                                                     to(t)                   = this /~interval/ this.next(t),
                                                     from(t)                 = this.prev(t) /~interval/ this],
@@ -282,7 +284,7 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
-                                                                                     unresolved()            = this.find('_'),
+                                                                                     unresolved()            = this.find('_').unresolved(),
                                                                                      find(t, t = $.parse(t)) = collection(trace_log %~![(u = x.tree()) && t /~match/ u && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t) -where [u = null],
 
