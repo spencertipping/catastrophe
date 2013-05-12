@@ -31,7 +31,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                                   promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
                                                   compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
 
-                                                  match_variables_for(pattern) = ('_ x xs xi r v t'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
+                                                  match_variables_for(pattern) = ('_ x xs xi r v t d dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
 
   # Selector methods.
 #   These let you refine and/or alter the current event selection. Each method that seems like it would take a function (e.g. map, filter) in actuality takes a string that represents the
@@ -45,6 +45,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #     v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
 #     r()   returns the trace record for a given syntax tree (see the section about this for useful methods they provide)
 #     t()   returns the timestamp of the trace record for a given syntax tree
+#     d()   returns the evaluation-order difference (in hook events) between this and the most recent preceding evaluation of the given expression
+#     dt()  returns the time difference between this and the most recent preceding evaluation of the given expression
 
   # So, for example, here are some basic queries:
 
@@ -54,14 +56,28 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # The last query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
-                                                  select(xs)              = collection(xs, this.xs, this.pattern),
+    # Finding subtree records.
+#     Part of the goal of the query syntax is to allow you to extract subfield values and timings by creating pattern variables. For example, you might run query against '_x + _y' and then get
+#     the values of the result, _x, and _y by mapping over '[v(_), v(_x), v(_y)]'. This ends up being interesting because not all subexpressions are evaluated within the context of the
+#     containing expression. This is particularly evident for things like '_x || _y': if _x is truthy, then _y won't have a corresponding evaluation record.
+
+    # A further complication is that the user can disable pretracing, in which case we'll have no lower bound for subexpression evaluations. So the matching isn't very precise: it simply looks
+#     for the most recent evaluation that occurred before the parent-expression evaluation.
+
                                                   iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                            wcapture [xs = this.xs,        r(t) = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
-                                                                                      xi = x,              v(t) = r(t).value,
-                                                                                      _  = xs[xi].tree(),  t(t) = r(t).time],
+                                                                            wcapture [xs = this.xs,        ri(t) = xs |~!r[ri <= x ? r.tree().id === t.id : (ri = x + 1, 0)][ri] |seq,
+                                                                                      xi = x,              v(t)  = r(t).value,
+                                                                                      _  = xs[xi].tree(),  t(t)  = r(t).time,  d(t)  = x           - ri(t),
+                                                                                                           r(t)  = xs[ri(t)],  dt(t) = xs[xi].time - r(t).time],
+
+                                                  select(xs)              = collection(xs, this.xs, this.pattern),
+                                                  get(i)                  = this.xs[this[(i + this.length) % this.length]],
 
                                                   map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
                                                   filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
+
+                                                  preorder()              = this.select(seq[+this].sort(xs[a].pre_id - xs[b].pre_id -given[a, b] -where[xs = this.xs])),
+                                                  postorder()             = this.select(seq[+this].sort(xs[a].id     - xs[b].id     -given[a, b] -where[xs = this.xs])),
 
                                                   resolved()              = this.select(this % [this.xs[x].resolved] -seq),
                                                   unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
@@ -133,7 +149,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                                                             last_resolution() = this.resolved || !this.bt ? this : this.bt.last_resolution(),
                                                                             find_sync(t)      = this.tree_id === t ? this : this.bt.find_sync(t),
                                                                             dt()              = this.time - this.pre_time,
-                                                                            contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
+                                                                            contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id,
+                                                                            toString()        = '#{this.resolved ? "R" : "U"}[#{this.pre_id}, #{this.id}]: #{this.tree()}'],
 
                                               record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
 
@@ -269,7 +286,11 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
+                                                                                     resolved()              = this.find('_').unresolved(),
                                                                                      unresolved()            = this.find('_').unresolved(),
+                                                                                     first(n)                = this.find('_').first(n),
+                                                                                     last(n)                 = this.find('_').last(n),
+
                                                                                      find(t, t = $.parse(t)) = collection(trace_log %~![(u = x.tree()) && t /~match/ u && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t) -where [u = null],
 
@@ -441,8 +462,9 @@ caterwaul.module('catastrophe', ':all', function ($) {
                   hook_form              = options.hook_form     /!$.parse /or ['hook(_tree, (_value))'.qs]                /~replace/ {hook: hook_ref},
 
                   remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t) /~map/ remove_markers_from,
-                  hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
-                                             (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_tree: $.syntax.from_string(t.id()), _value: t},
+                  hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq
+                                             ? t
+                                             : (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_tree: $.syntax.from_string(t.id()), _value: t},
 
                   hooks                  = ['H[_x]'.qs /-r/ (options.trace ? "hook(_._x)".qf : '_x'.qs)],
 
@@ -476,9 +498,10 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #   their 'constructor' property.
 
           scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless [_.data === 'function']".qf,
+          is_real_variable(name)   = name !== 'this' && name !== 'arguments',
 
           immediate_scope(t)       = scope_closed_reach(visit, t /!$.parse) -then- scope
-                                                                            -where [visit(n) = scope['@#{n.data}'] -eq- n -when- n.is_identifier(),
+                                                                            -where [visit(n) = scope['@#{n.data}'] -eq- n -when [n.is_identifier() && n.data /!is_real_variable],
                                                                                     scope    = {}],
 
           local_scope(t)           = scope_closed_reach(visit, t /!$.parse) -then- scope

@@ -34,7 +34,7 @@ bound in the selectors you use later on.
                                                     promote(f)                   = f.constructor === Function ? f : this.compile_string(f),
                                                     compile_string(s)            = s / this.match_variables_for(this.pattern) /-this.function_compiler/ {unbound_closure: true},
 
-                                                    match_variables_for(pattern) = ('_ x xs xi r v t'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
+                                                    match_variables_for(pattern) = ('_ x xs xi r v t d dt'.qw + pattern.collect("_.is_wildcard()".qf)) *[[x.toString(), true]] /object -seq,
 
 ## Selector methods
 
@@ -49,6 +49,8 @@ function's body. This string is compiled against several closure variables:
     v()   returns the value of a given syntax tree (this may be misleading if the syntax tree in question was not evaluated)
     r()   returns the trace record for a given syntax tree (see the section about this for useful methods they provide)
     t()   returns the timestamp of the trace record for a given syntax tree
+    d()   returns the evaluation-order difference (in hook events) between this and the most recent preceding evaluation of the given expression
+    dt()  returns the time difference between this and the most recent preceding evaluation of the given expression
 
 So, for example, here are some basic queries:
 
@@ -58,35 +60,50 @@ So, for example, here are some basic queries:
 
 The last query shows you each input to f() followed by the corresponding output. You can use string interpolation like this because the mapping function is caterwaul-transformed under :all.
 
-                                                    select(xs)              = collection(xs, this.xs, this.pattern),
-                                                    iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
-                                                                              wcapture [xs = this.xs,        r(t) = xs |~!r[ri <= x ? r.tree() === t : (ri = x + 1, 0)][r] |seq,
-                                                                                        xi = x,              v(t) = r(t).value,
-                                                                                        _  = xs[xi].tree(),  t(t) = r(t).time],
+### Finding subtree records
 
-                                                    map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
-                                                    filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
+  Part of the goal of the query syntax is to allow you to extract subfield values and timings by creating pattern variables. For example, you might run query against '_x + _y' and then get
+  the values of the result, _x, and _y by mapping over '[v(_), v(_x), v(_y)]'. This ends up being interesting because not all subexpressions are evaluated within the context of the
+  containing expression. This is particularly evident for things like '_x || _y': if _x is truthy, then _y won't have a corresponding evaluation record.
 
-                                                    resolved()              = this.select(this % [this.xs[x].resolved] -seq),
-                                                    unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
+A further complication is that the user can disable pretracing, in which case we'll have no lower bound for subexpression evaluations. So the matching isn't very precise: it simply looks
+for the most recent evaluation that occurred before the parent-expression evaluation.
 
-                                                    to_a()                  = this *[this.xs[x]] -seq,
-                                                    toString(depth)         = this.to_a() *['[#{x.tree().toString(depth || 5)}]'] -seq -re- it.join(', '),
+                                                  iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
+                                                                            wcapture [xs = this.xs,        ri(t) = xs |~!r[ri <= x ? r.tree().id === t.id : (ri = x + 1, 0)][ri] |seq,
+                                                                                      xi = x,              v(t)  = r(t).value,
+                                                                                      _  = xs[xi].tree(),  t(t)  = r(t).time,  d(t)  = x           - ri(t),
+                                                                                                           r(t)  = xs[ri(t)],  dt(t) = xs[xi].time - r(t).time],
 
-                                                    first(n)                = this.select(this.slice(0, n || 1)),
-                                                    last(n)                 = this.select(this.slice(this.length - (n || 1))),
+                                                  select(xs)              = collection(xs, this.xs, this.pattern),
+                                                  get(i)                  = this.xs[this[(i + this.length) % this.length]],
 
-                                                    next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
-                                                    prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                  map(s)                  = this             *[f(this.iteration_context(x))] -seq  -where [f = this.promote(s)],
+                                                  filter(s)               = this.select(this %[f(this.iteration_context(x))] -seq) -where [f = this.promote(s)],
 
-                                                    interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
+                                                  preorder()              = this.select(seq[+this].sort(xs[a].pre_id - xs[b].pre_id -given[a, b] -where[xs = this.xs])),
+                                                  postorder()             = this.select(seq[+this].sort(xs[a].id     - xs[b].id     -given[a, b] -where[xs = this.xs])),
 
-                                                    step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
-                                                    forward(n)              = this.select(this *~![ni[x, x + n] %[this.xs[x]] -seq] -seq),
-                                                    backward(n)             = this.select(this *~![ni[x - n, x] %[this.xs[x]] -seq] -seq),
-                                                    adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
-                                                    to(t)                   = this /~interval/ this.next(t),
-                                                    from(t)                 = this.prev(t) /~interval/ this],
+                                                  resolved()              = this.select(this % [this.xs[x].resolved] -seq),
+                                                  unresolved()            = this.select(this %![this.xs[x].resolved] -seq),
+
+                                                  to_a()                  = this *[this.xs[x]] -seq,
+                                                  toString(depth)         = this.to_a() *['[#{x.tree().toString(depth || 5)}]'] -seq -re- it.join(', '),
+
+                                                  first(n)                = this.select(this.slice(0, n || 1)),
+                                                  last(n)                 = this.select(this.slice(this.length - (n || 1))),
+
+                                                  next(t, t = $.parse(t)) = this.select(this %~!o[this.xs |  [xi > o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+                                                  prev(t, t = $.parse(t)) = this.select(this %~!o[this.xs |~![xi < o ? t /~match/ x.tree() : (xi = o, 0)][xi + 1] |seq] *[x - 1] -seq),
+
+                                                  interval(indexes)       = this.select(this *~![ni[x, indexes[xi]] -seq] -seq),
+
+                                                  step(n)                 = this.select(this *[x + n] %[this.xs[x]] -seq),
+                                                  forward(n)              = this.select(this *~![ni[x, x + n] %[this.xs[x]] -seq] -seq),
+                                                  backward(n)             = this.select(this *~![ni[x - n, x] %[this.xs[x]] -seq] -seq),
+                                                  adjacent(n)             = this.select(this *~![ni[x - n, x + n] %[this.xs[x]] -seq] -seq),
+                                                  to(t)                   = this /~interval/ this.next(t),
+                                                  from(t)                 = this.prev(t) /~interval/ this],
 
 # Hook function
 
@@ -139,7 +156,8 @@ Other methods are also defined, but they are probably useful only internally.
                                                                               last_resolution() = this.resolved || !this.bt ? this : this.bt.last_resolution(),
                                                                               find_sync(t)      = this.tree_id === t ? this : this.bt.find_sync(t),
                                                                               dt()              = this.time - this.pre_time,
-                                                                              contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id],
+                                                                              contains(record)  = !options.pre_trace || record.id >= this.pre_id && record.id <= this.id,
+                                                                              toString()        = '#{this.resolved ? "R" : "U"}[#{this.pre_id}, #{this.id}]: #{this.tree()}'],
 
                                                 record             = "this.tree_id -eq- _ -then- this".qf -se- it.prototype /-$.merge/ record_methods,
 
@@ -284,7 +302,11 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
                                                                 /-$.merge/ wcapture [options                 = settings,
 
+                                                                                     resolved()              = this.find('_').unresolved(),
                                                                                      unresolved()            = this.find('_').unresolved(),
+                                                                                     first(n)                = this.find('_').first(n),
+                                                                                     last(n)                 = this.find('_').last(n),
+
                                                                                      find(t, t = $.parse(t)) = collection(trace_log %~![(u = x.tree()) && t /~match/ u && xi + 1] *[x - 1] -seq,
                                                                                                                           trace_log, t) -where [u = null],
 
@@ -465,8 +487,9 @@ Note that you can specify new hook forms in the options. This is generally usefu
                 hook_form              = options.hook_form     /!$.parse /or ['hook(_tree, (_value))'.qs]                /~replace/ {hook: hook_ref},
 
                 remove_markers_from(t) = t.without_markers -ocq- (t.data === '[]' && $.is_gensym(t[0].data) ? t[1] : t) /~map/ remove_markers_from,
-                hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq ? t :
-                                           (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_tree: $.syntax.from_string(t.id()), _value: t},
+                hook(t)                = t.is_constant() || options.patterns && options.patterns |![x /~match/ remove_markers_from(t)] |seq
+                                           ? t
+                                           : (options.pre_trace ? pre_hook_form : hook_form) /~replace/ {_tree: $.syntax.from_string(t.id()), _value: t},
 
                 hooks                  = ['H[_x]'.qs /-r/ (options.trace ? "hook(_._x)".qf : '_x'.qs)],
 
@@ -502,9 +525,10 @@ set differences to figure out which variables are actually closure variables as 
 their 'constructor' property.
 
             scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless [_.data === 'function']".qf,
+            is_real_variable(name)   = name !== 'this' && name !== 'arguments',
 
             immediate_scope(t)       = scope_closed_reach(visit, t /!$.parse) -then- scope
-                                                                              -where [visit(n) = scope['@#{n.data}'] -eq- n -when- n.is_identifier(),
+                                                                              -where [visit(n) = scope['@#{n.data}'] -eq- n -when [n.is_identifier() && n.data /!is_real_variable],
                                                                                       scope    = {}],
 
             local_scope(t)           = scope_closed_reach(visit, t /!$.parse) -then- scope
