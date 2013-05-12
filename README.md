@@ -7,11 +7,11 @@ that this is not a fast library; on my netbook it takes more than 30 seconds to 
 
 This project sort of works right now.
 
-    patterns:                        probably broken in minor ways
+    pretrace mode:                   broken; final values are not recorded for some nodes (not sure why, but trace mode is fine)
+    patterns:                        implemented and tested, though some interactions with pretrace mode are broken
     native eval tracing:             implemented and tested in simple cases (test/example-eval.html)
     closure inspection/modification: implemented and tested in simple cases (test/example-closure.html)
-    pretrace mode:                   successfully traces example code (too slow for jQuery on my netbook)
-    trace mode:                      successfully traces jQuery
+    trace mode:                      implemented and tested in pathological cases (test/example-trace-self.html); also traces jQuery
     caterwaul integration:           implemented and tested (test/example-trace-self.html)
 
 ## Quickstart guide

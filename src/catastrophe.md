@@ -71,9 +71,10 @@ for the most recent evaluation that occurred before the parent-expression evalua
 
                                                   iteration_context(x)    = this.pattern /~match/ this.xs[x].tree() /or [{}] / {x: this.xs[x]} /-$.merge/
                                                                             wcapture [xs = this.xs,        ri(t) = xs |~!r[ri <= x ? r.tree().id === t.id : (ri = x + 1, 0)][ri] |seq,
-                                                                                      xi = x,              v(t)  = r(t).value,
-                                                                                      _  = xs[xi].tree(),  t(t)  = r(t).time,  d(t)  = x           - ri(t),
-                                                                                                           r(t)  = xs[ri(t)],  dt(t) = xs[xi].time - r(t).time],
+                                                                                      xi = x,              v(t)  = r(t) -re[it.value -when.it],
+                                                                                      _  = xs[xi].tree(),  t(t)  = r(t) -re[it.time  -when.it],
+                                                                                                           r(t)  = xs[ri(t)],  d(t)  = x - ri(t),
+                                                                                                                               dt(t) = r(t) -re [xs[xi].time - it.time -when.it]],
 
                                                   select(xs)              = collection(xs, this.xs, this.pattern),
                                                   get(i)                  = this.xs[this[(i + this.length) % this.length]],
@@ -288,7 +289,7 @@ in the options hash. (Disabling pre-tracing will make the debugging code run fas
 
           tracer_for(options) = trace -where [default_options = {mocks: {},  allow_mock_annotations: true,  trace_native_eval_forms: true,       environment: {},  closures: true,
                                                              hook_name: 'hook' /!$.gensym,     hook: null,                   global: global,  trace_log_size: 1 << 20,
-                                                              patterns: null,                 trace: true,                pre_trace: true,
+                                                              patterns: null,                 trace: true,                pre_trace: false,
 
                                                              hook_form: null,         pre_hook_form: null},
 
@@ -376,9 +377,9 @@ These don't appear in the final output right now. They just exist so that I can 
 Statements themselves aren't traced, but it's necessary to walk through them to get to expression-level stuff and to contextualize lvalues correctly. The base case for statements falls
 through to rvalue expressions; this reflects the fact that you can have an expression whose return value is not used.
 
-                  statements = ['S[_x]'.qs     /-r/ 'R[_x]'.qs,
-                                'S[{_x}]'.qs   /-r/ '{S[_x]}'.qs,
-                                'S[_x _y]'.qs  /-r/ 'S[_x] S[_y]'.qs,                                                                           // implied semicolon
+                  statements = ['S[_x]'.qs     /-r/ 'R[_x]'.qs,                                                 // toplevel rvalue expression
+                                'S[{_x}]'.qs   /-r/ '{S[_x]}'.qs,                                               // braces at statement level are blocks, not object literals
+                                'S[_x _y]'.qs  /-r/ 'S[_x] S[_y]'.qs,                                           // implied semicolon
                                 'S[_x; _y]'.qs /-r/ 'S[_x]; S[_y]'.qs,
 
                                 'S[var _vs, _x]'.qs              /-r/ 'S[var _vs], R[_x]'.qs,         'S[if (_cond) _body]'.qs            /-r/ 'if (R[_cond]) S[_body]'.qs,
@@ -447,7 +448,7 @@ or array entry separator.
 
                             (binary + assign) *[x[0] /-r/ x[1]] +
 
-                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function (_xs; _scope) {_body}]'.qs    /-r/ 'H[function (_xs) {C[_scope]; S[_body]}]'.qs,
+                            ['R[_x ? _y : _z]'.qs /-r/ 'H[R[_x] ? R[_y] : R[_z]]'.qs, 'R[function    (_xs; _scope) {_body}]'.qs /-r/ 'H[function    (_xs) {C[_scope]; S[_body]}]'.qs,
                                                                                       'R[function _f (_xs; _scope) {_body}]'.qs /-r/ 'H[function _f (_xs) {C[_scope]; S[_body]}]'.qs] -seq
 
         -where [binary = '+ - * / % << >> >>> < > <= >= instanceof in == != === !== & ^ | && ||'.qw *[[caterwaul.parse('R[_x #{x} _y]'), caterwaul.parse('H[R[_x] #{x} R[_y]]')]] -seq -ahead,
