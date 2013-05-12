@@ -7,11 +7,12 @@ that this is not a fast library; on my netbook it takes more than 30 seconds to 
 
 This project sort of works right now.
 
-    patterns:                        probably broken
-    native eval tracing:             untested, but what could possibly be wrong?
-    closure inspection/modification: implemented and tested in simple test cases
+    patterns:                        probably broken in minor ways
+    native eval tracing:             implemented and tested in simple cases (test/example-eval.html)
+    closure inspection/modification: implemented and tested in simple cases (test/example-closure.html)
     pretrace mode:                   successfully traces example code (too slow for jQuery on my netbook)
     trace mode:                      successfully traces jQuery
+    caterwaul integration:           implemented and tested (test/example-trace-self.html)
 
 ## Quickstart guide
 

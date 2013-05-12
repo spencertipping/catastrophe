@@ -268,8 +268,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                                                 /-$.merge/ wcapture [options                 = settings,
 
                                                                                      unresolved()            = this.find('_'),
-                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![t /~match/ x.tree() && xi + 1] *[x - 1] -seq,
-                                                                                                                          trace_log, t),
+                                                                                     find(t, t = $.parse(t)) = collection(trace_log %~![(u = x.tree()) && t /~match/ u && xi + 1] *[x - 1] -seq,
+                                                                                                                          trace_log, t) -where [u = null],
 
                                                                                      trace_module(c, module) = replace_module(this, c, module),
                                                                                      is_traced(f)            = f.toString() /~indexOf/ $.gensym_entropy() > -1,
@@ -338,8 +338,8 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                 'S[_x; _y]'.qs /-r/ 'S[_x]; S[_y]'.qs,
 
                                 'S[var _vs, _x]'.qs              /-r/ 'S[var _vs], R[_x]'.qs,         'S[if (_cond) _body]'.qs            /-r/ 'if (R[_cond]) S[_body]'.qs,
-                                'S[var _vs, _name@0]'.qs         /-r/ 'S[var _vs]; S[var _name]'.qs,  'S[if (_cond) _body else _else]'.qs /-r/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
-                                'S[var _vs, _name = _value]'.qs  /-r/ 'S[var _vs]; S[var _name = _value]'.qs,
+                                'S[var _vs, _name@0]'.qs         /-r/ 'S[var _vs], _name'.qs,         'S[if (_cond) _body else _else]'.qs /-r/ 'if (R[_cond]) S[_body] else S[_else]'.qs,
+                                'S[var _vs, _name = _value]'.qs  /-r/ 'S[var _vs], _name = R[_value]'.qs,
                                 'S[var _name@0]'.qs              /-r/ 'var _name'.qs,                 'S[throw _x]'.qs                    /-r/ 'throw R[_x]'.qs,
                                 'S[var _name = _value]'.qs       /-r/ 'var _name = R[_value]'.qs,
                                 'S[var _name in _value]'.qs      /-r/ 'var _name in R[_value]'.qs,    'S[for (_x) _body]'.qs              /-r/ 'for (S[_x]) S[_body]'.qs,
@@ -357,7 +357,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
                                 'S[switch (_value) {_cases}]'.qs /-r/ 'switch (R[_value]) {S[_cases]}'.qs,
                                 'S[_x: _y]'.qs                   /-r/ '_x: S[_y]'.qs,                           // covers both 'case x:' and labels within blocks (: left-associates)
 
-                                'S[function _f(_xs; _scope) {_body}'.qs   /-r/ 'function _f(_xs; _scope) {C[_scope]; S[_body]}'.qs,
+                                'S[function _f(_xs; _scope) {_body}'.qs   /-r/ 'function _f(_xs) {C[_scope]; S[_body]}'.qs,
 
                                 'S[try {_x} catch (_e) _y finally _z]'.qs /-r/ 'try {S[_x]} catch (_e) S[_y] finally S[_z]'.qs,
                                 'S[try {_x} catch (_e) _y]'.qs            /-r/ 'try {S[_x]} catch (_e) S[_y]'.qs,
@@ -367,7 +367,7 @@ caterwaul.module('catastrophe', ':all', function ($) {
 #     In some of these cases we can transform pieces of the lvalue but leave the lvalue itself intact. For example, 'foo.bar[bif]' contains 'foo.bar' as an rvalue, so we are free to transform
 #     this expression arbitrarily.
 
-                  lvalues = ['L[_x@0]'.qs   /-r/ '_x'.qs,        'L[_x[_y]]'.qs /-r/ 'R[_x][L[_y]]'.qs,
+                  lvalues = ['L[_x@0]'.qs   /-r/ '_x'.qs,        'L[_x[_y]]'.qs /-r/ 'R[_x][R[_y]]'.qs,
                              'L[_x._y]'.qs  /-r/ 'R[_x]._y'.qs,  'L[_x(_y)]'.qs /-r/ 'U[_x(_y)]'.qs],           // case for legacy IE code; this should be unreachable
 
     # Rvalue cases.
@@ -378,8 +378,12 @@ caterwaul.module('catastrophe', ':all', function ($) {
     # Note that certain properties have been intentionally preserved. For instance, the comma operator's result is not traced because doing so prevents the comma from being used as an argument
 #     or array entry separator.
 
-                  rvalues = ['R[_x@0]'.qs      /-r/ 'H[_x]'.qs,               'R[]'.qs            /-r/ ''.qs,                                   // empty case required for [] and {}
-                             'R[delete _x]'.qs /-r/ 'H[delete L[_x]]'.qs,     'R[new _f(_xs)]'.qs /-r/ 'new _f(R[_xs])'.qs,                     // TODO: trace this with better granularity
+                  rvalues = ['R[_x]'.qs        /-r/ 'H[_x]'.qs,               'R[]'.qs            /-r/ ''.qs,                                   // empty case required for [] and {}
+                             'R[R[_x]]'.qs     /-r/ 'R[_x]'.qs,               'R[H[_x]]'.qs       /-r/ 'H[_x]'.qs,
+
+                             'R[new _x]'.qs    /-r/ 'H[new (R[_x])]'.qs,      'R[new _f(_xs)]'.qs /-r/ 'H[new (R[_f])(R[_xs])]'.qs,
+
+                             'R[delete _x]'.qs /-r/ 'H[delete L[_x]]'.qs,
                              'R[_x._y]'.qs     /-r/ 'H[R[_x]._y]'.qs,         'R[(_x)]'.qs        /-r/ '(R[_x])'.qs,
                              'R[_x[_y]]'.qs    /-r/ 'H[R[_x][R[_y]]]'.qs,     'R[[_x]]'.qs        /-r/ 'H[[R[_x]]]'.qs,
                              'R[_x, _y]'.qs    /-r/ 'R[_x], R[_y]'.qs,        'R[{_x}]'.qs        /-r/ 'H[{R[_x]}]'.qs,
@@ -454,10 +458,11 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
       # The function's closure scope is simply its set of identifiers minus the ones that are local to it. Each of these sets is stored as an object on the 'function' node.
 
+                  fix_key(k)               = k.replace(/^@/, ''),
                   closure_pattern          = 'if (this === _hook) if (arguments.length) return _set; else return _get'.qs,
-                  closure_setter_case(v)   = '_name in arguments[0] && (_v = arguments[0]._v)'.qs /~replace/ {_name: $.syntax.from_string(v), _v: v},
+                  closure_setter_case(v)   = '_name in arguments[0] && (_v = arguments[0]._v)'.qs /~replace/ {_name: $.syntax.from_string(v /!fix_key), _v: v /!fix_key},
 
-                  closure_state_object(vs) = vs /keys *[[x, new $.syntax(x)]] /object /seq /!$.syntax.from_object,
+                  closure_state_object(vs) = vs /keys *[[x /!fix_key, new $.syntax(x /!fix_key)]] /object /seq /!$.syntax.from_object,
                   closure_state_setter(vs) = new $.syntax(',', vs /keys *closure_setter_case -seq).unflatten() -re [it.length ? it : $.empty],
 
                   closure_hook(vs)         = closure_pattern /~replace/ {_hook: options.hook_name, _get: closure_state_object(vs), _set: closure_state_setter(vs)},
@@ -465,19 +470,20 @@ caterwaul.module('catastrophe', ':all', function ($) {
 
   # Closure annotation.
 #   We need to find out which variables are closed over by any given function. To do this, we first need to figure out which variables belong to which function to begin with. Then we can take
-#   set differences to figure out which variables are actually closure variables as opposed to locals.
+#   set differences to figure out which variables are actually closure variables as opposed to locals. Note that we prefix all closure variables with @ so that Caterwaul can continue to read
+#   their 'constructor' property.
 
           scope_closed_reach(f, t) = f(t) -then- t /~each/ "scope_closed_reach(f, _) -unless [_.data === 'function']".qf,
 
           immediate_scope(t)       = scope_closed_reach(visit, t /!$.parse) -then- scope
-                                                                            -where [visit(n) = scope[n.data] -eq- n -when- n.is_identifier(),
+                                                                            -where [visit(n) = scope['@#{n.data}'] -eq- n -when- n.is_identifier(),
                                                                                     scope    = {}],
 
           local_scope(t)           = scope_closed_reach(visit, t /!$.parse) -then- scope
                                                                             -where [visit(n)       = visit_vars(n[0].flatten(',')) -when [n.data === 'var'],
-                                                                                    visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope[it[0].data] = it : normal(vs)],
-                                                                                    normal(vs)     = vs *![scope[x.flatten('=')[0].data] = x] -seq,
-                                                                                    scope          = +t[0][0].flatten(',') %[x.data.length] *[[x.data, x]] /object -seq],
+                                                                                    visit_vars(vs) = vs[0].flatten('=')[0] -re [it.data === 'in' ? scope['@#{it[0].data}'] = it : normal(vs)],
+                                                                                    normal(vs)     = vs *![scope['@' + x.flatten('=')[0].data] = x] -seq,
+                                                                                    scope          = +t[0][0].flatten(',') %[x.data.length] *[['@' + x.data, x]] /object -seq],
 
           closure_scope(t)         = immediate_scope(t) %k%![local /-Object.prototype.hasOwnProperty.call/ x] -seq -where [local = local_scope(t)],
 

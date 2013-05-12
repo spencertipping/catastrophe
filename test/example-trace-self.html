@@ -9,7 +9,7 @@
   <script src='http://code.jquery.com/jquery.min.js'></script>
   <script src='../build/catastrophe.js'></script>
   <script>
-    var self_tracer = catastrophe({closures: false});
+    var self_tracer = catastrophe();
 
     var start_time = +new Date();
     self_tracer.trace_module(catastrophe.caterwaul, 'catastrophe');
